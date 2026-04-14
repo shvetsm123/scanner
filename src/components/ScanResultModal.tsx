@@ -10,6 +10,7 @@ import {
 } from '../types/preferences';
 import type { RecentScan } from '../types/scan';
 import { showMoreInfoUnlimitedUpsell } from '../lib/moreInfoUnlimitedAlert';
+import { selectDistinctDisplayReasons } from '../lib/scanResultAntiRepeat';
 import { resolveUiResultStyle, resolvedNutritionSnapshotLinesForMode } from '../lib/resultStyleHelpers';
 import { VerdictBadge } from './VerdictBadge';
 
@@ -58,8 +59,16 @@ export function ScanResultModal({
     ? resolvedNutritionSnapshotLinesForMode(mode, scan.nutritionSnapshot, scan.nutriments)
     : [];
   const flagLines = scan?.ingredientFlags?.filter((p) => typeof p === 'string' && p.trim()) ?? [];
-  const bulletCap = mode === 'advanced' ? 8 : 5;
-  const displayReasons = (scan?.reasons ?? []).filter((r) => typeof r === 'string' && r.trim()).slice(0, bulletCap);
+  const displayReasons = scan
+    ? selectDistinctDisplayReasons({
+        mode,
+        summary: scan.summary ?? '',
+        preferenceLines,
+        avoidPreferenceIds: avoidPreferences,
+        reasons: scan.reasons ?? [],
+        nutritionLines,
+      })
+    : [];
   const ingredientParagraphs = (
     scan?.ingredientBreakdown?.filter((p) => typeof p === 'string' && p.trim()) ?? []
   ).slice(0, 4);

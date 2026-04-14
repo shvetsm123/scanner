@@ -46,6 +46,8 @@ SUMMARY (one sentence)
 REASONS (array length depends on input.resultStyle — user message states exact counts)
 - Factual bullets first: sugar per 100 g or ml; salt (or sodium); saturated fat; sweetening / added sugar signals; sweeteners; caffeine; allergens; snack or dessert style; ingredient list length—only with listing support.
 - If a nutrient is missing, use a non-numeric factual line instead of inventing numbers.
+- Each reason MUST add a fact not already stated in summary or preferenceMatches. Do not paraphrase the summary thesis or repeat an avoid-list match (e.g. if preferenceMatches cover added sugar, do not use another bullet that only says the product is sugary or has added sugar—use a different angle: salt, sat fat, product type, processing, syrup/fruit form, ingredient-list length, allergens, etc.).
+- Do not restate the same nutrient thesis as nutritionSnapshot lines; bullets complement the snapshot rather than repeating the same per-100g point in different words.
 
 nutritionSnapshot (array of strings, can be empty)
 - One line per useful fact from nutriments or explicit listing text. Depth scales with resultStyle (user message).
@@ -81,14 +83,14 @@ Never infer cow's milk / dairy from yogurt alone; mention milk/dairy only when e
 function depthInstructionsForResultStyle(resultStyle: ResultStyle): string {
   if (resultStyle === 'advanced') {
     return `REQUIRED COUNTS FOR THIS REQUEST (input.resultStyle is "advanced"):
-- reasons: 5 to 8 strings, each 8–180 characters, all distinct factual points (no filler). Prefer sugar, salt or sodium, saturated fat, sweetening, sweeteners, caffeine, allergens, product-type, ingredient-list complexity when evidence exists.
+- reasons: 5 to 8 strings, each 8–180 characters, all distinct factual points (no filler). Prefer sugar, salt or sodium, saturated fat, sweetening, sweeteners, caffeine, allergens, product-type, ingredient-list complexity when evidence exists—each line must be non-redundant with summary, preferenceMatches, and nutritionSnapshot.
 - nutritionSnapshot: include every useful per-100g line supported by nutriments; if partly missing, one honest line is fine—never invent grams.
 - ingredientFlags: aim for 5–14 distinct flags when the listing supports them; fewer is fine if evidence is thin.
 - ingredientBreakdown: 3 or 4 paragraphs preferred (minimum 2). Each paragraph at least 40 characters, calmer than the bullet list, mini-article feel, still mobile-friendly.
 - summary stays one sentence and must not duplicate bullet wording.`;
   }
   return `REQUIRED COUNTS FOR THIS REQUEST (input.resultStyle is "quick"):
-- reasons: 3 to 5 strings, each 8–160 characters, factual and compact.
+- reasons: 3 to 5 strings, each 8–160 characters, factual and compact; each must differ from summary and preferenceMatches (no second sugar line if sugar is already the main story there).
 - nutritionSnapshot and ingredientFlags: keep sparse or empty unless a few lines add clear value.
 - ingredientBreakdown: 2 or 3 tighter paragraphs (minimum 2), each at least 22 characters; keep composition-focused but shorter than advanced.`;
 }
