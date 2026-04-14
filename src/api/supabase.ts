@@ -86,7 +86,7 @@ export function preferencesRowHasValues(row: DbPreferencesRow): boolean {
     return true;
   }
   const rs = row.result_style;
-  if (rs === 'quick' || rs === 'balanced' || rs === 'detailed') {
+  if (rs === 'quick' || rs === 'advanced' || rs === 'balanced' || rs === 'detailed') {
     return true;
   }
   return Array.isArray(row.avoid_preferences) && row.avoid_preferences.length > 0;

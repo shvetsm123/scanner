@@ -27,6 +27,7 @@ export function buildAiInput(
       categories: product.categories,
       imageUrl: product.imageUrl,
       allergensText: product.allergensText,
+      nutriments: product.nutriments,
     },
   };
 

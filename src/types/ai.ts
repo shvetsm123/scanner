@@ -8,13 +8,17 @@ export type AiResult = {
   /** Shown verdict after preference conflicts; never more lenient than baseVerdict. */
   verdict: Verdict;
   summary: string;
+  /** 3–5 entries for quick scans, 5–8 for advanced (see normalizeCanonicalAiPayload). */
   reasons: string[];
   preferenceMatches: string[];
-  whyText: string;
-  /** 2–3 composition paragraphs for Detailed mode (calm, child-focused; facts from product fields only). */
+  /** 2–4 composition paragraphs (facts from product fields only). */
   ingredientBreakdown: string[];
   allergyNotes: string[];
   parentTakeaway: string;
+  /** Per-100g (or per-100ml) facts only; omit unknowns. */
+  nutritionSnapshot: string[];
+  /** Short flag lines grounded in ingredients / allergens / categories. */
+  ingredientFlags: string[];
 };
 
 export type KidsAiInput = {
@@ -34,6 +38,8 @@ export type KidsAiInput = {
     categories?: string[];
     imageUrl?: string;
     allergensText?: string;
+    /** Numeric per-100g / per-100ml facts from the listing when present. */
+    nutriments?: Record<string, number>;
   };
 };
 

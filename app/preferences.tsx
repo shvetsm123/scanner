@@ -15,46 +15,34 @@ import {
   setChildAge,
   setResultStyle,
 } from '../src/lib/storage';
-import type { AvoidPreference, Plan, ResultStyle } from '../src/types/preferences';
+import {
+  AVOID_PREFERENCE_OPTIONS,
+  type AvoidPreference,
+  type Plan,
+  type ResultStyle,
+} from '../src/types/preferences';
 
 const MIN_AGE = 1;
 const MAX_AGE = 16;
 const DEFAULT_AGE = 4;
 
 const RESULT_CARDS: { id: ResultStyle; title: string; body: string }[] = [
-  { id: 'quick', title: 'Quick', body: 'Fast result with key reasons' },
-  { id: 'balanced', title: 'Balanced', body: 'A little more context' },
-  { id: 'detailed', title: 'Detailed', body: 'More composition detail' },
-];
-
-const AVOID_ITEMS: { id: AvoidPreference; label: string }[] = [
-  { id: 'added_sugar', label: 'Added sugar' },
-  { id: 'sweeteners', label: 'Sweeteners' },
-  { id: 'artificial_colors', label: 'Artificial colors' },
-  { id: 'caffeine', label: 'Caffeine' },
-  { id: 'ultra_processed', label: 'Ultra-processed snacks' },
-  { id: 'milk', label: 'Milk' },
-  { id: 'soy', label: 'Soy' },
-  { id: 'gluten', label: 'Gluten' },
-  { id: 'nuts', label: 'Nuts' },
-  { id: 'eggs', label: 'Eggs' },
+  { id: 'quick', title: 'Less info', body: 'Verdict, one-line summary, 3–5 fact bullets' },
+  { id: 'advanced', title: 'More info', body: '5–8 bullets, nutrition, flags, full breakdown' },
 ];
 
 export default function PreferencesScreen() {
   const [ready, setReady] = useState(false);
   const [age, setAge] = useState(DEFAULT_AGE);
-  const [resultStyle, setResultStyleState] = useState<ResultStyle>('balanced');
+  const [resultStyle, setResultStyleState] = useState<ResultStyle>('quick');
   const [avoidList, setAvoidList] = useState<AvoidPreference[]>([]);
   const [saving, setSaving] = useState(false);
-  const [plan, setPlan] = useState<Plan>('free');
+  const [plan, setPlanUi] = useState<Plan>('free');
 
   const load = useCallback(async () => {
-    const [storedAge, style, avoids, p] = await Promise.all([
-      getChildAge(),
-      getResultStyle(),
-      getAvoidPreferences(),
-      getPlan(),
-    ]);
+    const [storedAge, avoids] = await Promise.all([getChildAge(), getAvoidPreferences()]);
+    const p = await getPlan();
+    const style = await getResultStyle();
     if (storedAge !== null) {
       setAge(Math.min(MAX_AGE, Math.max(MIN_AGE, storedAge)));
     } else {
@@ -62,7 +50,8 @@ export default function PreferencesScreen() {
     }
     setResultStyleState(style);
     setAvoidList(avoids);
-    setPlan(p);
+    setPlanUi(p);
+    console.warn('[planDebug][preferences] load', { plan: p, style, storedAge, avoids });
     setReady(true);
   }, []);
 
@@ -83,10 +72,34 @@ export default function PreferencesScreen() {
   const onSave = async () => {
     setSaving(true);
     try {
+      const currentPlan = await getPlan();
+      console.warn('[prefsDebug] onSave before', { age, avoidList, resultStyle, currentPlan });
+      setPlanUi(currentPlan);
       await setChildAge(age);
-      await setResultStyle(resultStyle);
+      console.warn('[prefsDebug] onSave after setChildAge', { getChildAge: await getChildAge() });
       await setAvoidPreferences(avoidList);
+      console.warn('[prefsDebug] onSave after setAvoidPreferences', {
+        getAvoidPreferences: await getAvoidPreferences(),
+      });
+      const styleToSave: ResultStyle = currentPlan === 'free' ? 'quick' : resultStyle;
+      await setResultStyle(styleToSave);
+      const savedAge = await getChildAge();
+      const savedAvoids = await getAvoidPreferences();
+      const finalStyle = await getResultStyle();
+      console.warn('[prefsDebug] onSave after setResultStyle', {
+        savedAge,
+        savedAvoids,
+        finalStyle,
+        styleToSave,
+      });
+      setResultStyleState(finalStyle);
       await pushSupabasePreferencesFromLocal();
+      console.warn('[prefsDebug] onSave after pushSupabasePreferencesFromLocal', 'push completed');
+      console.warn('[prefsDebug] onSave before router.back', {
+        getChildAge: await getChildAge(),
+        getAvoidPreferences: await getAvoidPreferences(),
+        getResultStyle: await getResultStyle(),
+      });
       router.back();
     } finally {
       setSaving(false);
@@ -212,29 +225,39 @@ export default function PreferencesScreen() {
         </View>
 
         <View style={{ marginTop: 32 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Result style</Text>
-          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>Choose how much detail you want</Text>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Scan detail</Text>
+          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>
+            {plan === 'free'
+              ? 'Free uses Less info only · More info is included with Unlimited'
+              : 'Unlimited: choose Less info or More info for each scan'}
+          </Text>
           <View style={{ marginTop: 14, gap: 10 }}>
             {RESULT_CARDS.map((card) => {
               const selected = resultStyle === card.id;
-              const detailedLocked = card.id === 'detailed' && plan !== 'insights';
+              const advancedLocked = card.id === 'advanced' && plan !== 'unlimited';
               return (
                 <Pressable
                   key={card.id}
                   onPress={() => {
-                    if (detailedLocked) {
-                      router.push({ pathname: '/paywall', params: { plan: 'insights' } });
+                    console.warn('[planDebug][preferences] tap result style', {
+                      tapped: card.id,
+                      currentPlan: plan,
+                      advancedLocked,
+                      currentStyle: resultStyle,
+                    });
+                    if (advancedLocked) {
+                      router.push({ pathname: '/paywall', params: { plan: 'unlimited' } });
                       return;
                     }
                     setResultStyleState(card.id);
                   }}
                   style={{
-                    backgroundColor: detailedLocked ? '#FAF7F2' : '#FFFDF8',
+                    backgroundColor: advancedLocked ? '#FAF7F2' : '#FFFDF8',
                     borderRadius: 18,
                     paddingVertical: 16,
                     paddingHorizontal: 16,
                     borderWidth: 1,
-                    borderColor: selected ? '#C9A06E' : detailedLocked ? '#E0D4C4' : '#E8DFD4',
+                    borderColor: selected ? '#C9A06E' : advancedLocked ? '#E0D4C4' : '#E8DFD4',
                     shadowColor: '#9B8D7A',
                     shadowOpacity: selected ? 0.1 : 0.06,
                     shadowRadius: 12,
@@ -247,17 +270,17 @@ export default function PreferencesScreen() {
                       style={{
                         fontSize: 17,
                         fontWeight: '700',
-                        color: detailedLocked ? '#7A6E61' : '#1F1A16',
+                        color: advancedLocked ? '#7A6E61' : '#1F1A16',
                       }}
                     >
                       {card.title}
                     </Text>
-                    {detailedLocked ? <Ionicons name="lock-closed-outline" size={20} color="#B59B7A" /> : null}
+                    {advancedLocked ? <Ionicons name="lock-closed-outline" size={20} color="#B59B7A" /> : null}
                   </View>
                   <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#6D6053' }}>{card.body}</Text>
-                  {detailedLocked ? (
+                  {advancedLocked ? (
                     <Text style={{ marginTop: 10, fontSize: 13, lineHeight: 18, color: '#9A8B7A', fontWeight: '600' }}>
-                      Detailed checks are part of Insights.
+                      Advanced info is included with Unlimited.
                     </Text>
                   ) : null}
                 </Pressable>
@@ -270,7 +293,7 @@ export default function PreferencesScreen() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Avoid list</Text>
           <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>Choose what matters for your family</Text>
           <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {AVOID_ITEMS.map((item) => {
+            {AVOID_PREFERENCE_OPTIONS.map((item) => {
               const selected = avoidList.includes(item.id);
               return (
                 <Pressable

@@ -82,7 +82,7 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
     return null;
   }
   const reasonsRaw = o.reasons;
-  if (!Array.isArray(reasonsRaw) || reasonsRaw.length !== 3) {
+  if (!Array.isArray(reasonsRaw) || reasonsRaw.length < 3 || reasonsRaw.length > 8) {
     return null;
   }
   const reasons = reasonsRaw.map((r) => (typeof r === 'string' ? r.trim() : ''));
@@ -124,15 +124,30 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
     scannedAt,
   };
 
+  const nutritionSnap = asTrimmedStringArray(o.nutritionSnapshot, 12);
+  if (nutritionSnap.length > 0) {
+    out.nutritionSnapshot = nutritionSnap;
+  }
+  const flagsStored = asTrimmedStringArray(o.ingredientFlags, 16);
+  if (flagsStored.length > 0) {
+    out.ingredientFlags = flagsStored;
+  }
+
   if (preferenceMatchesRaw.length > 0) {
     out.preferenceMatches = preferenceMatchesRaw;
   }
 
   const nm = o.nutriments;
   if (nm && typeof nm === 'object' && !Array.isArray(nm)) {
-    const salt = (nm as Record<string, unknown>).salt_100g;
-    if (typeof salt === 'number' && Number.isFinite(salt)) {
-      out.nutriments = { salt_100g: salt };
+    const rec = nm as Record<string, unknown>;
+    const numMap: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        numMap[k] = v;
+      }
+    }
+    if (Object.keys(numMap).length > 0) {
+      out.nutriments = numMap;
     }
   }
 

@@ -19,7 +19,7 @@ import { RecentScanCard } from '../src/components/RecentScanCard';
 import { ScanResultModal } from '../src/components/ScanResultModal';
 import { ScannerModal } from '../src/components/ScannerModal';
 import { buildRecentScanFromBarcode, createFallbackRecentScan } from '../src/lib/mockScanResult';
-import { showFavoritesInsightsUpsell } from '../src/lib/favoritesInsightsAlert';
+import { showFavoritesUnlimitedUpsell } from '../src/lib/favoritesInsightsAlert';
 import { buildScanAnalysisContextKey, findRecentScanForReuse } from '../src/lib/scanAnalysisContext';
 import {
   addRecentScan,
@@ -33,7 +33,9 @@ import {
   getRecentScans,
   getResultStyle,
   incrementSuccessfulScanCountIfNeeded,
+  pushSupabasePreferencesFromLocal,
   resetAppDataForDev,
+  setResultStyle,
   syncRemotePreferencesWithLocal,
   tryPersistSuccessfulScanToSupabase,
 } from '../src/lib/storage';
@@ -61,13 +63,17 @@ function recentScanFromFavoriteItem(item: FavoriteListItem, recent: RecentScan[]
     productName: item.productName,
     brand: item.brand ?? undefined,
     imageUrl: item.imageUrl ?? undefined,
+    baseVerdict: 'unknown',
     verdict: 'unknown',
     summary: 'Saved favorite — scan again for an updated check.',
-    reasons: ['Saved item', 'Scan for latest', 'Labels can change'],
+    reasons: ['No live product data on this device', 'Scan for sugar, salt, and ingredients', 'Labels and formulas can change'],
     scannedAt: new Date().toISOString(),
-    whyText:
-      'This favorite was opened without a stored scan on this device. Scan the barcode again for a full evaluation.',
-    ingredientBreakdown: [],
+    nutritionSnapshot: [],
+    ingredientFlags: [],
+    ingredientBreakdown: [
+      'This favorite was opened without a stored scan on this device, so there is no fresh ingredient list or nutrition snapshot to review here.',
+      'Scan the barcode again to load the product page and get a fact-based breakdown for your child’s age.',
+    ],
     allergyNotes: [],
     parentTakeaway: 'Scan again when you have the package.',
   };
@@ -130,7 +136,7 @@ export default function HomeScreen() {
   const [scanError, setScanError] = useState<{ title: string; message: string } | null>(null);
   const [plan, setPlan] = useState<Plan>('free');
   const [dailyScanState, setDailyScanState] = useState({ dateKey: '', count: 0 });
-  const [resultStyle, setResultStyle] = useState<ResultStyle>('balanced');
+  const [resultStyle, setResultStyle] = useState<ResultStyle>('quick');
   const [avoidPreferences, setAvoidPreferences] = useState<AvoidPreference[]>([]);
   const isProcessingScanRef = useRef(false);
   const resultModalVisibleRef = useRef(false);
@@ -162,7 +168,10 @@ export default function HomeScreen() {
       pendingPostScanOutcomeRef.current = null;
       expectingScannerDismissHandoffRef.current = false;
 
-      const reveal = () => {
+      const reveal = async () => {
+        const [freshPlan, freshStyle] = await Promise.all([getPlan(), getResultStyle()]);
+        setPlan(freshPlan);
+        setResultStyle(freshStyle);
         if (snapshot.kind === 'known') {
           setRecentScans(snapshot.nextScans);
           if (snapshot.daily) {
@@ -270,19 +279,25 @@ export default function HomeScreen() {
 
   const hydrate = useCallback(async () => {
     await syncRemotePreferencesWithLocal();
-    const [scans, p, style, avoids, daily] = await Promise.all([
+    const [scans, avoids, daily] = await Promise.all([
       getRecentScans(),
-      getPlan(),
-      getResultStyle(),
       getAvoidPreferences(),
       getDailySuccessfulScanState(),
     ]);
+    const p = await getPlan();
+    const style = await getResultStyle();
+    console.warn('[planDebug][home] hydrate', {
+      plan: p,
+      resultStyle: style,
+      avoids,
+      daily,
+    });
     setRecentScans(scans);
     setPlan(p);
     setResultStyle(style);
     setAvoidPreferences(avoids);
     setDailyScanState(daily);
-    if (p === 'insights') {
+    if (p === 'unlimited') {
       await refreshFavoritesList();
     } else {
       setFavoritesList([]);
@@ -336,7 +351,7 @@ export default function HomeScreen() {
         return;
       }
       setModalProductId(pid);
-      if (plan === 'insights' && pid) {
+      if (plan === 'unlimited' && pid) {
         setModalFavorited(await isFavorite(client, profileId, pid));
       } else {
         setModalFavorited(false);
@@ -400,12 +415,12 @@ export default function HomeScreen() {
     setScannerModalVisible(true);
   };
 
-  const navigatePaywall = (opts?: { preselect?: 'insights' | 'unlimited'; closeResultModalFirst?: boolean }) => {
+  const navigatePaywall = (opts?: { preselect?: 'unlimited'; closeResultModalFirst?: boolean }) => {
     if (opts?.closeResultModalFirst) {
       onCloseModal();
     }
     const push = () => {
-      if (opts?.preselect === 'insights' || opts?.preselect === 'unlimited') {
+      if (opts?.preselect === 'unlimited') {
         router.push({ pathname: '/paywall', params: { plan: opts.preselect } });
       } else {
         router.push('/paywall');
@@ -418,10 +433,18 @@ export default function HomeScreen() {
     }
   };
 
-  const promptFavoritesInsightsUpsell = () => {
-    showFavoritesInsightsUpsell(() => {
+  const onModalSelectInfoLevel = useCallback((level: ResultStyle) => {
+    void (async () => {
+      await setResultStyle(level);
+      setResultStyle(level);
+      void pushSupabasePreferencesFromLocal();
+    })();
+  }, []);
+
+  const promptFavoritesUnlimitedUpsell = () => {
+    showFavoritesUnlimitedUpsell(() => {
       navigatePaywall({
-        preselect: 'insights',
+        preselect: 'unlimited',
         closeResultModalFirst: resultModalVisibleRef.current || unknownResultVisibleRef.current,
       });
     });
@@ -639,7 +662,7 @@ export default function HomeScreen() {
     setScannerModalVisible(true);
   };
 
-  const openSavedScanById = (scanId: string) => {
+  const openSavedScanById = async (scanId: string) => {
     clearPostScanHandoff();
     setScanError(null);
     setUnknownResultVisible(false);
@@ -648,12 +671,15 @@ export default function HomeScreen() {
     scanPipelineLoadingRef.current = false;
     setScannerModalVisible(false);
     setModalScan(null);
+    const [freshPlan, freshStyle] = await Promise.all([getPlan(), getResultStyle()]);
+    setPlan(freshPlan);
+    setResultStyle(freshStyle);
     setActiveModalScanId(scanId);
     setResultReuseBanner(null);
     setResultModalVisible(true);
   };
 
-  const openFavoriteItem = (item: FavoriteListItem) => {
+  const openFavoriteItem = async (item: FavoriteListItem) => {
     const scan = recentScanFromFavoriteItem(item, recentScans);
     clearPostScanHandoff();
     setScanError(null);
@@ -663,14 +689,17 @@ export default function HomeScreen() {
     scanPipelineLoadingRef.current = false;
     setScannerModalVisible(false);
     setActiveModalScanId(null);
+    const [freshPlan, freshStyle] = await Promise.all([getPlan(), getResultStyle()]);
+    setPlan(freshPlan);
+    setResultStyle(freshStyle);
     setModalScan(scan);
     setResultReuseBanner(null);
     setResultModalVisible(true);
   };
 
   const onFavoriteControlPress = async () => {
-    if (plan !== 'insights') {
-      promptFavoritesInsightsUpsell();
+    if (plan !== 'unlimited') {
+      promptFavoritesUnlimitedUpsell();
       return;
     }
     if (!displayScan) {
@@ -783,9 +812,7 @@ export default function HomeScreen() {
                   borderColor: '#D9D0C6',
                 }}
               >
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B6158', letterSpacing: 0.4 }}>
-                  {plan === 'unlimited' ? 'Unlimited' : 'Insights'}
-                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B6158', letterSpacing: 0.4 }}>Unlimited</Text>
               </Pressable>
             )}
           </View>
@@ -896,7 +923,7 @@ export default function HomeScreen() {
 
         <View style={{ gap: 10 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Favorites</Text>
-          {plan === 'insights' ? (
+          {plan === 'unlimited' ? (
             favoritesList.length === 0 ? (
               <Text style={{ fontSize: 14, color: '#9A8E82', fontWeight: '600', fontStyle: 'italic' }}>
                 No favorites yet
@@ -933,7 +960,7 @@ export default function HomeScreen() {
             )
           ) : (
             <Pressable
-              onPress={promptFavoritesInsightsUpsell}
+              onPress={promptFavoritesUnlimitedUpsell}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -948,7 +975,7 @@ export default function HomeScreen() {
               }}
             >
               <Ionicons name="lock-closed-outline" size={16} color="#B59B7A" />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#8A7E70' }}>Favorites · Insights</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#8A7E70' }}>Favorites · Unlimited</Text>
             </Pressable>
           )}
         </View>
@@ -1176,7 +1203,8 @@ export default function HomeScreen() {
           onFavoritePress={onFavoriteControlPress}
           onClose={onCloseModal}
           onScanAgain={onScanAgain}
-          onOpenPaywall={() => navigatePaywall({ preselect: 'insights', closeResultModalFirst: true })}
+          onOpenPaywall={() => navigatePaywall({ preselect: 'unlimited', closeResultModalFirst: true })}
+          onSelectInfoLevel={onModalSelectInfoLevel}
           reuseNotice={resultReuseBanner}
         />
       ) : null}

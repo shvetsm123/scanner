@@ -1,37 +1,36 @@
 import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getPlan, setPlan } from '../src/lib/storage';
+import { getPlan, getResultStyle, setPlan } from '../src/lib/storage';
 import type { Plan } from '../src/types/preferences';
 
-type PlanCardDef = {
-  id: Plan;
+type UnlimitedCardDef = {
+  id: 'unlimited';
   title: string;
   subtitle: string;
   features: string[];
 };
 
-const UNLIMITED_CARD: PlanCardDef = {
+const UNLIMITED_CARD: UnlimitedCardDef = {
   id: 'unlimited',
   title: 'Unlimited',
-  subtitle: 'Unlimited product scans',
-  features: ['Unlimited scans', 'Quick results', 'Balanced results'],
+  subtitle: 'Full scans and saved favorites',
+  features: ['Unlimited scans', 'Less or More info', 'Favorites'],
 };
 
-const INSIGHTS_CARD: PlanCardDef = {
-  id: 'insights',
-  title: 'Insights',
-  subtitle: 'Unlimited scans plus deeper tools',
-  features: ['Unlimited scans', 'Detailed checks', 'Favorites', 'Local parent feedback'],
-};
+const COMING_SOON_FEATURES = ['Discussions', 'Community features', 'More tools coming soon'];
 
 function parsePlanQueryParam(raw: string | string[] | undefined): Plan | null {
   const v = Array.isArray(raw) ? raw[0] : raw;
-  if (v === 'insights' || v === 'unlimited') {
-    return v;
+  if (v === 'unlimited') {
+    return 'unlimited';
+  }
+  // Legacy deep link / old builds — same paid tier as Unlimited today
+  if (v === 'insights') {
+    return 'unlimited';
   }
   return null;
 }
@@ -45,10 +44,8 @@ export default function PaywallScreen() {
     const p = await getPlan();
     setCurrentPlan(p);
     const fromRoute = parsePlanQueryParam(params.plan);
-    if (fromRoute === 'insights' || fromRoute === 'unlimited') {
-      setSelectedPaid(fromRoute);
-    } else if (p === 'insights') {
-      setSelectedPaid('insights');
+    if (fromRoute === 'unlimited') {
+      setSelectedPaid('unlimited');
     } else if (p === 'unlimited') {
       setSelectedPaid('unlimited');
     } else {
@@ -62,18 +59,26 @@ export default function PaywallScreen() {
     }, [load]),
   );
 
-  const paidPlans = useMemo(() => [UNLIMITED_CARD, INSIGHTS_CARD], []);
-
   const goBack = () => {
     router.back();
   };
 
   const onContinue = async () => {
+    console.warn('[planDebug][paywall] before setPlan', { selectedPaid, currentPlan });
     await setPlan(selectedPaid);
+    const nextPlan = await getPlan();
+    const nextStyle = await getResultStyle();
+    console.warn('[planDebug][paywall] after setPlan', { nextPlan, nextStyle });
     router.back();
   };
 
   const continueDisabled = currentPlan === selectedPaid;
+
+  const onComingSoonPress = useCallback(() => {
+    Alert.alert('Coming soon', 'This plan is not available yet.');
+  }, []);
+
+  const unlimitedSelected = selectedPaid === 'unlimited';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F1E8' }} edges={['top', 'left', 'right']}>
@@ -119,66 +124,91 @@ export default function PaywallScreen() {
               borderColor: '#C5D4C5',
             }}
           >
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#3D5A40' }}>
-              Current plan: {currentPlan === 'unlimited' ? 'Unlimited' : 'Insights'}
-            </Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#3D5A40' }}>Current plan: Unlimited</Text>
             <Text style={{ marginTop: 6, fontSize: 13, color: '#5A6B5A', lineHeight: 18 }}>
-              {currentPlan === 'unlimited'
-                ? 'Upgrade to Insights for detailed checks and premium tools.'
-                : 'You have full access. Switch to Unlimited below if you prefer a lighter plan.'}
+              You have full access. You can review your selection below.
             </Text>
           </View>
         ) : null}
 
         <View style={{ marginTop: 24, gap: 14 }}>
-          {paidPlans.map((card) => {
-            const selected = selectedPaid === card.id;
-            const isCurrent = currentPlan === card.id;
-            return (
-              <Pressable
-                key={card.id}
-                onPress={() => setSelectedPaid(card.id)}
+          <Pressable
+            onPress={() => setSelectedPaid('unlimited')}
+            style={{
+              backgroundColor: '#FFFDF8',
+              borderRadius: 22,
+              padding: 20,
+              borderWidth: 2,
+              borderColor: unlimitedSelected ? '#C9A06E' : '#E8DFD4',
+              shadowColor: '#9B8D7A',
+              shadowOpacity: unlimitedSelected ? 0.14 : 0.06,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 6 },
+              elevation: unlimitedSelected ? 4 : 1,
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F1A16' }}>{UNLIMITED_CARD.title}</Text>
+                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>{UNLIMITED_CARD.subtitle}</Text>
+              </View>
+              {currentPlan === 'unlimited' ? (
+                <View
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    backgroundColor: '#E8EFE8',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#3D5A40' }}>Current</Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={{ marginTop: 16, gap: 8 }}>
+              {UNLIMITED_CARD.features.map((f) => (
+                <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: '#4F453B', fontWeight: '600' }}>
+                  • {f}
+                </Text>
+              ))}
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={onComingSoonPress}
+            style={{
+              backgroundColor: '#F3EEEA',
+              borderRadius: 22,
+              padding: 20,
+              borderWidth: 1,
+              borderColor: '#DED5CC',
+              opacity: 0.92,
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#8A7E70' }}>Coming soon</Text>
+                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#9A8E82' }}>Not available yet</Text>
+              </View>
+              <View
                 style={{
-                  backgroundColor: '#FFFDF8',
-                  borderRadius: 22,
-                  padding: 20,
-                  borderWidth: 2,
-                  borderColor: selected ? '#C9A06E' : '#E8DFD4',
-                  shadowColor: '#9B8D7A',
-                  shadowOpacity: selected ? 0.14 : 0.06,
-                  shadowRadius: 16,
-                  shadowOffset: { width: 0, height: 6 },
-                  elevation: selected ? 4 : 1,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 999,
+                  backgroundColor: '#E8E2DC',
                 }}
               >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F1A16' }}>{card.title}</Text>
-                    <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>{card.subtitle}</Text>
-                  </View>
-                  {isCurrent ? (
-                    <View
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        borderRadius: 999,
-                        backgroundColor: '#E8EFE8',
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#3D5A40' }}>Current</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <View style={{ marginTop: 16, gap: 8 }}>
-                  {card.features.map((f) => (
-                    <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: '#4F453B', fontWeight: '600' }}>
-                      • {f}
-                    </Text>
-                  ))}
-                </View>
-              </Pressable>
-            );
-          })}
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#7A6E61' }}>SOON</Text>
+              </View>
+            </View>
+            <View style={{ marginTop: 16, gap: 8 }}>
+              {COMING_SOON_FEATURES.map((f) => (
+                <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: '#958676', fontWeight: '600' }}>
+                  • {f}
+                </Text>
+              ))}
+            </View>
+          </Pressable>
         </View>
 
         <Pressable

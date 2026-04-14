@@ -4,50 +4,94 @@ import { Platform } from 'react-native';
 import { getFallbackAiResult } from '../lib/getFallbackAiResult';
 import { normalizeCanonicalAiPayload } from '../lib/resultStyleHelpers';
 import type { AiResult, KidsAiInput } from '../types/ai';
+import type { ResultStyle } from '../types/preferences';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
 const LOG_PREFIX = '[OpenAI]';
 
-const SYSTEM_PROMPT = `You write parent-facing explanations for ONE child food scan. Output JSON ONLY. No markdown.
+const SYSTEM_PROMPT = `You write scan results for ONE packaged food or drink for parents, childAge in the input. Output JSON ONLY. No markdown.
+
+CORE ORDER
+1) Facts from the listing first (ingredients_text, allergens, categories, nutriments, product_name, brand, barcode only—no guessing).
+2) Short, practical child-age interpretation second. Never sound clinical or like a doctor. No lectures.
 
 AUTHORITATIVE VERDICTS (non-negotiable)
-- The user JSON includes ruleBasedBaseVerdict: the app's hard rule outcome from age + product facts. You MUST NOT contradict it.
-- You MUST set baseVerdict in your JSON to exactly the same string as ruleBasedBaseVerdict.
-- finalVerdict: start from ruleBasedBaseVerdict. Apply avoidPreferences ONLY as extra constraints (same rules as before): if avoidPreferences is empty or nothing matches, finalVerdict MUST equal ruleBasedBaseVerdict. If a selected avoid clearly matches product text, finalVerdict may be stricter than ruleBasedBaseVerdict but NEVER more lenient. Unrelated avoids must not change the verdict.
-- Your summary, reasons, whyText, and parentTakeaway MUST align with ruleBasedBaseVerdict and finalVerdict (e.g. under-two + avoid means clear, age-appropriate caution—never "usually fine").
-
-CONTEXT
-- resultStyle in the input is only for explanation depth in the app UI; it must NOT change any verdict.
-- Use ONLY facts from product fields in the JSON. Never invent ingredients, nutrition numbers, or allergens.
-- No medical claims or "safe/unsafe" promises.
-- Never infer cow's milk / dairy from yogurt alone. Mention dairy only if explicit dairy terms exist in the text.
+- ruleBasedBaseVerdict is the app's hard outcome. Set baseVerdict to exactly the same string as ruleBasedBaseVerdict.
+- finalVerdict: if avoidPreferences is empty or nothing matches, finalVerdict MUST equal ruleBasedBaseVerdict. If an avoid clearly matches product text, finalVerdict may be stricter than ruleBasedBaseVerdict but NEVER more lenient.
+- summary, reasons, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, and parentTakeaway MUST align with those verdicts.
 
 AVOID PREFERENCES
-- If avoidPreferences is missing or empty: preferenceMatches MUST be []. finalVerdict MUST equal ruleBasedBaseVerdict.
-- If avoidPreferences is non-empty: only list preferenceMatches when clearly supported by product text and the selected topic. Otherwise [] and finalVerdict equals ruleBasedBaseVerdict.
+- If avoidPreferences is missing or empty: preferenceMatches MUST be [].
+- If non-empty: list preferenceMatches only when clearly supported by product text; otherwise [].
 
-SUMMARY & REASONS
-- summary: one short parent-facing sentence consistent with the verdicts above.
-- reasons: exactly 3 short tag-like phrases (2–4 words each), no trailing punctuation.
+DATA HONESTY
+- Never invent grams, allergens, caffeine, or sweeteners. If a number is missing from nutriments, do not state a gram value; say nutrition is missing or not on the listing if relevant.
+- If added sugar is not explicitly confirmed, use cautious wording ("Sweetened product", "Sugar appears in the ingredient list")—do not claim a numeric "added sugar" unless the data supports it.
+- Use nutriments keys when present (e.g. sugars_100g, salt_100g, sodium_100g, saturated-fat_100g, energy-kcal_100g). Prefer salt_100g; if only sodium_100g exists, you may phrase sodium in mg per 100 g (convert from g if needed).
+- Detect sweeteners or caffeine only from clear ingredient/category/name signals, not assumptions.
 
-CANONICAL OUTPUT (always include every key)
+AGE FRAMING (brief, official-style, not quoted)
+- Under 2: treat added sugar / clearly sweetened products strictly in wording.
+- 2–3: note that free sugar allowance is small, so sugar can use a noticeable share of the day when numbers exist.
+- 4–6: still contextualize sugar and salt for snacks vs everyday foods.
+- Never use vague praise like "nutrient-rich", "natural vegetable", "age-appropriate", "healthy option", "can be enjoyed in moderation" unless tightly justified by data (prefer not to use them at all).
+
+PRODUCT TYPE
+- Infer obvious type only when supported by categories/name/ingredients (yogurt, dessert, cookies, chips, candy, snack, drink, puree, cereal, pasta, plain food, etc.).
+
+SUMMARY (one sentence)
+- One short child-focused sentence (interpretation), different in tone from the factual bullets. Examples of tone (do not copy verbatim): "For this age, better sometimes than every day." / "For children under 2, this is not a good fit." / "For this age, the salt level makes this a weaker snack choice."
+
+REASONS (array length depends on input.resultStyle — user message states exact counts)
+- Factual bullets first: sugar per 100 g or ml; salt (or sodium); saturated fat; sweetening / added sugar signals; sweeteners; caffeine; allergens; snack or dessert style; ingredient list length—only with listing support.
+- If a nutrient is missing, use a non-numeric factual line instead of inventing numbers.
+
+nutritionSnapshot (array of strings, can be empty)
+- One line per useful fact from nutriments or explicit listing text. Depth scales with resultStyle (user message).
+
+ingredientFlags (array of strings, can be empty)
+- Short flag lines grounded in ingredients, allergens, categories. More lines expected for advanced (user message).
+
+ingredientBreakdown (2–4 strings)
+- Readable paragraphs (composition): what the product mainly is; simple vs formulated; sugar/sweetened nature if grounded; additives only if in data; allergen relevance; say when data is limited. Advanced paragraphs should be clearly fuller than quick (user message).
+
+allergyNotes (array)
+- 0–3 short factual lines from allergensText / clear tokens; empty if none.
+
+parentTakeaway (one line)
+- One practical closing line aligned with verdict and age (e.g. "Better occasionally than daily for this age.").
+
+CANONICAL OUTPUT (always include every key; arrays may be empty)
 {
   "baseVerdict": "good"|"sometimes"|"avoid"|"unknown",
   "finalVerdict": "good"|"sometimes"|"avoid"|"unknown",
   "summary": string,
-  "reasons": [string, string, string],
+  "reasons": string[] (length per resultStyle; see user message),
   "preferenceMatches": string[],
-  "whyText": string (1–2 short sentences; must reflect ruleBasedBaseVerdict; do not repeat the summary verbatim),
-  "ingredientBreakdown": string[] (exactly 2 or 3 strings; see INGREDIENT BREAKDOWN below),
-  "allergyNotes": string[] (empty if no allergensText and no clear allergen tokens; otherwise 1–3 short factual lines),
-  "parentTakeaway": string (one short closing line for parents)
+  "nutritionSnapshot": string[],
+  "ingredientFlags": string[],
+  "ingredientBreakdown": string[],
+  "allergyNotes": string[],
+  "parentTakeaway": string
 }
 
-INGREDIENT BREAKDOWN
-- Exactly 2 or 3 array items; each item one short readable paragraph grounded in listing facts. If details are thin, say so cautiously.
+Never infer cow's milk / dairy from yogurt alone; mention milk/dairy only when explicit in text or allergens.`;
 
-When writing whyText, reflect the strongest factual drivers behind ruleBasedBaseVerdict (sugar/sweetening, product type, caffeine, sweeteners, data limits). Mention the parent's avoid list only when preferenceMatches is non-empty.`;
+function depthInstructionsForResultStyle(resultStyle: ResultStyle): string {
+  if (resultStyle === 'advanced') {
+    return `REQUIRED COUNTS FOR THIS REQUEST (input.resultStyle is "advanced"):
+- reasons: 5 to 8 strings, each 8–180 characters, all distinct factual points (no filler). Prefer sugar, salt or sodium, saturated fat, sweetening, sweeteners, caffeine, allergens, product-type, ingredient-list complexity when evidence exists.
+- nutritionSnapshot: include every useful per-100g line supported by nutriments; if partly missing, one honest line is fine—never invent grams.
+- ingredientFlags: aim for 5–14 distinct flags when the listing supports them; fewer is fine if evidence is thin.
+- ingredientBreakdown: 3 or 4 paragraphs preferred (minimum 2). Each paragraph at least 40 characters, calmer than the bullet list, mini-article feel, still mobile-friendly.
+- summary stays one sentence and must not duplicate bullet wording.`;
+  }
+  return `REQUIRED COUNTS FOR THIS REQUEST (input.resultStyle is "quick"):
+- reasons: 3 to 5 strings, each 8–160 characters, factual and compact.
+- nutritionSnapshot and ingredientFlags: keep sparse or empty unless a few lines add clear value.
+- ingredientBreakdown: 2 or 3 tighter paragraphs (minimum 2), each at least 22 characters; keep composition-focused but shorter than advanced.`;
+}
 
 function parseJson(content: string): unknown {
   try {
@@ -74,7 +118,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
 
   if (!keyPresent) {
     console.warn(LOG_PREFIX, 'using fallback: missing API key');
-    return getFallbackAiResult(ruleBase);
+    return getFallbackAiResult(ruleBase, input.resultStyle);
   }
 
   const requestUrl = getOpenAiChatUrl();
@@ -95,7 +139,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `Evaluate this input. Reply with JSON only:\n${JSON.stringify(input)}`,
+            content: `Evaluate this input. Reply with JSON only:\n${JSON.stringify(input)}\n\n${depthInstructionsForResultStyle(input.resultStyle)}`,
           },
         ],
       }),
@@ -108,7 +152,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
 
     if (!response.ok) {
       console.warn(LOG_PREFIX, 'using fallback: HTTP not OK, status', response.status);
-      return getFallbackAiResult(ruleBase);
+      return getFallbackAiResult(ruleBase, input.resultStyle);
     }
 
     let data: { choices?: { message?: { content?: string } }[] };
@@ -116,20 +160,20 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
       data = JSON.parse(rawText) as { choices?: { message?: { content?: string } }[] };
     } catch (parseBodyErr) {
       console.warn(LOG_PREFIX, 'using fallback: failed to parse response body as JSON:', parseBodyErr);
-      return getFallbackAiResult(ruleBase);
+      return getFallbackAiResult(ruleBase, input.resultStyle);
     }
 
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       console.warn(LOG_PREFIX, 'using fallback: missing or empty choices[0].message.content');
-      return getFallbackAiResult(ruleBase);
+      return getFallbackAiResult(ruleBase, input.resultStyle);
     }
 
     const parsed = parseJson(content.trim());
-    const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase);
+    const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase, input.resultStyle);
     if (!evaluation) {
       console.warn(LOG_PREFIX, 'using fallback: evaluation JSON failed validation', { parsed });
-      return getFallbackAiResult(ruleBase);
+      return getFallbackAiResult(ruleBase, input.resultStyle);
     }
     const hadAvoidPrefs = Array.isArray(input.avoidPreferences) && input.avoidPreferences.length > 0;
     if (!hadAvoidPrefs) {
@@ -144,6 +188,6 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
     const message = err instanceof Error ? err.message : String(err);
     console.warn(LOG_PREFIX, 'caught error:', message, err);
     console.warn(LOG_PREFIX, 'using fallback after error');
-    return getFallbackAiResult(ruleBase);
+    return getFallbackAiResult(ruleBase, input.resultStyle);
   }
 }

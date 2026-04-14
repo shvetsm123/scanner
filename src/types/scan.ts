@@ -23,7 +23,11 @@ export type SavedScanResult = {
   categories?: string[];
   allergensText?: string;
   /** Nutrition snapshot for remote product row (when OFF provides it). */
-  nutriments?: { salt_100g?: number };
+  nutriments?: Record<string, number>;
+  /** Factual nutrition lines for Advanced (from AI). */
+  nutritionSnapshot?: string[];
+  /** Short composition / allergen-style flags (from AI). */
+  ingredientFlags?: string[];
   /** Raw Open Food Facts `product` object for Supabase `raw_json`. */
   rawJson?: Record<string, unknown>;
   /** Fingerprint of child age + result style + avoids when this result was produced; used for reuse. */

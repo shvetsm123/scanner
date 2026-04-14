@@ -6,9 +6,7 @@ export type NormalizedProduct = {
   ingredientsText?: string;
   categories?: string[];
   allergensText?: string;
-  nutriments?: {
-    salt_100g?: number;
-  };
+  nutriments?: Record<string, number>;
   rawJson?: Record<string, unknown>;
 };
 
@@ -27,13 +25,36 @@ type OffV0Response = {
     categories_tags?: string[];
     allergens?: string;
     allergens_from_ingredients?: string;
-    nutriments?: {
-      salt_100g?: number;
-    };
+    nutriments?: Record<string, unknown>;
   };
 };
 
 const OFF_USER_AGENT = 'Scanner/1.0 (Expo; contact: local-app)';
+
+const NUTRIMENT_KEYS = [
+  'sugars_100g',
+  'salt_100g',
+  'sodium_100g',
+  'saturated-fat_100g',
+  'fat_100g',
+  'energy-kcal_100g',
+  'energy_100g',
+] as const;
+
+function pickNutriments(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const n = raw as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const key of NUTRIMENT_KEYS) {
+    const v = n[key];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      out[key] = v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 function parseCategories(product: NonNullable<OffV0Response['product']>): string[] | undefined {
   if (Array.isArray(product.categories_tags) && product.categories_tags.length > 0) {
@@ -90,9 +111,7 @@ export async function getProductByBarcode(barcode: string): Promise<NormalizedPr
     const categories = parseCategories(p);
     const allergensText = (p.allergens_from_ingredients || p.allergens || '').trim() || undefined;
 
-    const salt100 = p.nutriments?.salt_100g;
-    const nutriments =
-      typeof salt100 === 'number' && Number.isFinite(salt100) ? { salt_100g: salt100 } : undefined;
+    const nutriments = pickNutriments(p.nutriments);
 
     return {
       barcode: code,

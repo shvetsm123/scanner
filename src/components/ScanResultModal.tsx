@@ -2,9 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
-import type { AvoidPreference, Plan, ResultStyle } from '../types/preferences';
+import {
+  humanizePreferenceMatchLine,
+  type AvoidPreference,
+  type Plan,
+  type ResultStyle,
+} from '../types/preferences';
 import type { RecentScan } from '../types/scan';
-import { whyTextForResultStyle } from '../lib/resultStyleHelpers';
+import { showMoreInfoUnlimitedUpsell } from '../lib/moreInfoUnlimitedAlert';
+import { resolveUiResultStyle, resolvedNutritionSnapshotLinesForMode } from '../lib/resultStyleHelpers';
 import { VerdictBadge } from './VerdictBadge';
 
 type ScanResultModalProps = {
@@ -19,6 +25,7 @@ type ScanResultModalProps = {
   onClose: () => void;
   onScanAgain: () => void;
   onOpenPaywall: () => void;
+  onSelectInfoLevel?: (level: ResultStyle) => void;
   reuseNotice?: string | null;
 };
 
@@ -34,17 +41,29 @@ export function ScanResultModal({
   onClose,
   onScanAgain,
   onOpenPaywall,
+  onSelectInfoLevel,
   reuseNotice,
 }: ScanResultModalProps) {
-  const detailedBlocked = resultStyle === 'detailed' && plan !== 'insights';
-  const mode: ResultStyle = detailedBlocked ? 'balanced' : resultStyle;
+  const mode: ResultStyle = resolveUiResultStyle(plan, resultStyle);
+  console.warn('[planDebug][resultModal] render', {
+    plan,
+    resultStyleProp: resultStyle,
+    effectiveMode: mode,
+    scanId: scan?.id,
+    verdict: scan?.verdict,
+  });
   const preferenceLines = scan?.preferenceMatches?.filter(Boolean) ?? [];
   const showAvoidSection = avoidPreferences.length > 0 && preferenceLines.length > 0;
+  const nutritionLines = scan
+    ? resolvedNutritionSnapshotLinesForMode(mode, scan.nutritionSnapshot, scan.nutriments)
+    : [];
+  const flagLines = scan?.ingredientFlags?.filter((p) => typeof p === 'string' && p.trim()) ?? [];
+  const bulletCap = mode === 'advanced' ? 8 : 5;
+  const displayReasons = (scan?.reasons ?? []).filter((r) => typeof r === 'string' && r.trim()).slice(0, bulletCap);
   const ingredientParagraphs = (
     scan?.ingredientBreakdown?.filter((p) => typeof p === 'string' && p.trim()) ?? []
-  ).slice(0, 3);
+  ).slice(0, 4);
   const allergyLines = scan?.allergyNotes?.filter((p) => typeof p === 'string' && p.trim()) ?? [];
-  const whyDisplay = whyTextForResultStyle(scan?.whyText, mode);
   const favoriteDisabled = favoriteLoading || !scan;
   const isUnknownNotFound =
     scan != null &&
@@ -185,11 +204,11 @@ export function ScanResultModal({
                       disabled={favoriteDisabled}
                       accessibilityRole="button"
                       accessibilityLabel={
-                        plan === 'insights'
+                        plan === 'unlimited'
                           ? isFavorited
                             ? 'Remove from favorites'
                             : 'Add to favorites'
-                          : 'Favorites with Insights'
+                          : 'Favorites with Unlimited'
                       }
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       style={{
@@ -198,16 +217,16 @@ export function ScanResultModal({
                         borderRadius: 14,
                         alignItems: 'center',
                         justifyContent: 'center',
-                        backgroundColor: plan === 'insights' && isFavorited ? '#F8EDED' : '#F5F0E8',
+                        backgroundColor: plan === 'unlimited' && isFavorited ? '#F8EDED' : '#F5F0E8',
                         borderWidth: 1,
-                        borderColor: plan === 'insights' && isFavorited ? '#E8C4C4' : '#E6DDD4',
+                        borderColor: plan === 'unlimited' && isFavorited ? '#E8C4C4' : '#E6DDD4',
                         opacity: favoriteDisabled ? 0.5 : 1,
                       }}
                     >
                       <Ionicons
-                        name={plan === 'insights' && isFavorited ? 'heart' : 'heart-outline'}
+                        name={plan === 'unlimited' && isFavorited ? 'heart' : 'heart-outline'}
                         size={22}
-                        color={plan !== 'insights' ? '#B59B7A' : isFavorited ? '#B85C5C' : '#6D6053'}
+                        color={plan !== 'unlimited' ? '#B59B7A' : isFavorited ? '#B85C5C' : '#6D6053'}
                       />
                     </Pressable>
                   ) : null}
@@ -217,97 +236,158 @@ export function ScanResultModal({
                 )}
                 <Text style={{ marginTop: 8, fontSize: 13, color: '#817363' }}>Barcode: {scan?.barcode ?? '-'}</Text>
 
-                {detailedBlocked ? (
-              <View
-                style={{
-                  marginTop: 14,
-                  paddingVertical: 14,
-                  paddingHorizontal: 14,
-                  borderRadius: 16,
-                  backgroundColor: '#F4EDE3',
-                  borderWidth: 1,
-                  borderColor: '#E0D0BC',
-                }}
-              >
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#5B4A38', lineHeight: 20 }}>
-                  Detailed checks are part of Insights.
-                </Text>
-                <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 19, color: '#6D6053' }}>
-                  Showing balanced detail until you upgrade.
-                </Text>
-                <Pressable
-                  onPress={onOpenPaywall}
-                  style={{
-                    marginTop: 12,
-                    alignSelf: 'flex-start',
-                    paddingVertical: 10,
-                    paddingHorizontal: 16,
-                    borderRadius: 12,
-                    backgroundColor: '#2C251F',
-                  }}
-                >
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFDF9' }}>View plans</Text>
-                </Pressable>
-              </View>
-            ) : null}
+                {scan ? (
+                  <View style={{ marginTop: 12 }}>
+                    <VerdictBadge verdict={scan.verdict} />
+                  </View>
+                ) : null}
 
-            {scan ? (
-              <View style={{ marginTop: 14 }}>
-                <VerdictBadge verdict={scan.verdict} />
-              </View>
-            ) : null}
+                <Text style={{ marginTop: 10, fontSize: 15, lineHeight: 22, color: '#4F453B' }}>{scan?.summary ?? ''}</Text>
 
-            <Text style={{ marginTop: 14, fontSize: 15, lineHeight: 22, color: '#4F453B' }}>{scan?.summary ?? ''}</Text>
+                {scan ? (
+                  <View
+                    style={{
+                      marginTop: 12,
+                      alignSelf: 'stretch',
+                      flexDirection: 'row',
+                      backgroundColor: '#EDE6DD',
+                      borderRadius: 14,
+                      padding: 3,
+                      borderWidth: 1,
+                      borderColor: '#E4D9CC',
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => {
+                        if (plan === 'free') {
+                          return;
+                        }
+                        if (resultStyle !== 'quick') {
+                          onSelectInfoLevel?.('quick');
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 9,
+                        borderRadius: 11,
+                        backgroundColor: mode === 'quick' ? '#FFFDF8' : 'transparent',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          textAlign: 'center',
+                          fontSize: 13,
+                          fontWeight: '700',
+                          color: mode === 'quick' ? '#1F1A16' : '#7A6E61',
+                        }}
+                      >
+                        Less info
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        if (plan === 'free') {
+                          showMoreInfoUnlimitedUpsell(() => {
+                            onOpenPaywall();
+                          });
+                          return;
+                        }
+                        if (resultStyle !== 'advanced') {
+                          onSelectInfoLevel?.('advanced');
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 9,
+                        borderRadius: 11,
+                        backgroundColor: mode === 'advanced' ? '#FFFDF8' : 'transparent',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 5,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          textAlign: 'center',
+                          fontSize: 13,
+                          fontWeight: '700',
+                          color: mode === 'advanced' ? '#1F1A16' : '#7A6E61',
+                        }}
+                      >
+                        More info
+                      </Text>
+                      {plan === 'free' ? (
+                        <Ionicons name="lock-closed-outline" size={15} color="#9A8B7A" />
+                      ) : null}
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {showAvoidSection ? (
+                  <View
+                    style={{
+                      marginTop: 12,
+                      paddingVertical: 14,
+                      paddingHorizontal: 14,
+                      borderRadius: 14,
+                      backgroundColor: '#F7EFE3',
+                      borderWidth: 1,
+                      borderColor: '#E2D0B8',
+                      borderLeftWidth: 4,
+                      borderLeftColor: '#C9A06E',
+                      gap: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#4A3828', letterSpacing: 0.2 }}>
+                      Matches your avoid list
+                    </Text>
+                    {preferenceLines.map((line, index) => (
+                      <Text
+                        key={`${line}-${index}`}
+                        style={{ fontSize: 14, color: '#5C4A38', lineHeight: 20, fontWeight: '600' }}
+                      >
+                        • {humanizePreferenceMatchLine(line)}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
 
             <View style={{ marginTop: 14, gap: 8 }}>
-              {(scan?.reasons ?? []).map((reason, index) => (
+              {displayReasons.map((reason, index) => (
                 <Text key={`${reason}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
                   • {reason}
                 </Text>
               ))}
             </View>
 
-            {showAvoidSection ? (
-              <View
-                style={{
-                  marginTop: 16,
-                  paddingVertical: 14,
-                  paddingHorizontal: 14,
-                  borderRadius: 14,
-                  backgroundColor: '#F7EFE3',
-                  borderWidth: 1,
-                  borderColor: '#E2D0B8',
-                  borderLeftWidth: 4,
-                  borderLeftColor: '#C9A06E',
-                  gap: 8,
-                }}
-              >
-                <Text style={{ fontSize: 14, fontWeight: '800', color: '#4A3828', letterSpacing: 0.2 }}>
-                  Matches your avoid list
-                </Text>
-                {preferenceLines.map((line, index) => (
-                  <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5C4A38', lineHeight: 20, fontWeight: '600' }}>
-                    • {line}
-                  </Text>
-                ))}
+            {mode === 'advanced' && nutritionLines.length > 0 ? (
+              <View style={{ marginTop: 18 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>Nutrition snapshot</Text>
+                <View style={{ marginTop: 10, gap: 8 }}>
+                  {nutritionLines.map((line, index) => (
+                    <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
+                      • {line}
+                    </Text>
+                  ))}
+                </View>
               </View>
             ) : null}
 
-            {whyDisplay ? (
-              <View style={{ marginTop: 16 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>Why this result</Text>
-                <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{whyDisplay}</Text>
+            {mode === 'advanced' && flagLines.length > 0 ? (
+              <View style={{ marginTop: 18 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>Ingredient flags</Text>
+                <View style={{ marginTop: 10, gap: 8 }}>
+                  {flagLines.map((line, index) => (
+                    <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
+                      • {line}
+                    </Text>
+                  ))}
+                </View>
               </View>
             ) : null}
 
-            {mode === 'balanced' && scan?.parentTakeaway ? (
-              <View style={{ marginTop: 14 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>Parent takeaway</Text>
-                <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{scan.parentTakeaway}</Text>
-              </View>
-            ) : null}
-
-            {mode === 'detailed' && ingredientParagraphs.length > 0 ? (
+            {mode === 'advanced' && ingredientParagraphs.length > 0 ? (
               <View
                 style={{
                   marginTop: 18,
@@ -330,7 +410,7 @@ export function ScanResultModal({
               </View>
             ) : null}
 
-            {mode === 'detailed' && allergyLines.length > 0 ? (
+            {mode === 'advanced' && allergyLines.length > 0 ? (
               <View style={{ marginTop: 18 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>Allergy notes</Text>
                 <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 22, color: '#5D5246' }}>
@@ -339,7 +419,7 @@ export function ScanResultModal({
               </View>
             ) : null}
 
-            {mode === 'detailed' && scan?.parentTakeaway ? (
+            {mode === 'advanced' && scan?.parentTakeaway ? (
               <View style={{ marginTop: 16 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>Parent takeaway</Text>
                 <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{scan.parentTakeaway}</Text>
