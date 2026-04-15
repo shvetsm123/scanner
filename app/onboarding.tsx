@@ -4,28 +4,29 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { avoidLabel, getAppLanguage, t } from '../src/lib/i18n';
 import { setAvoidPreferences, setOnboardingCompleted, setResultStyle, syncRemotePreferencesWithLocal } from '../src/lib/storage';
-import { AVOID_PREFERENCE_OPTIONS, type AvoidPreference } from '../src/types/preferences';
+import { AVOID_PREFERENCE_IDS, type AvoidPreference } from '../src/types/preferences';
 
-const introSlides = [
-  {
-    title: 'Scan food for your child',
-    subtitle: 'Quick AI-based product checks for parents',
-  },
-  {
-    title: 'See what’s okay, sometimes, or better to avoid',
-    subtitle:
-      'We look at ingredients, sugar, processing, and product context for your child’s age',
-  },
-];
-
-const totalSteps = introSlides.length + 1;
+const totalSteps = 3;
 
 export default function OnboardingScreen() {
+  const lang = getAppLanguage();
   const [step, setStep] = useState(0);
   const [avoidPreferences, setAvoidPreferencesState] = useState<AvoidPreference[]>([]);
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const isFirstStepMount = useRef(true);
+
+  const introSlides = [
+    {
+      title: t('onboard.slide1.title', lang),
+      subtitle: t('onboard.slide1.sub', lang),
+    },
+    {
+      title: t('onboard.slide2.title', lang),
+      subtitle: t('onboard.slide2.sub', lang),
+    },
+  ];
 
   const isIntroStep = step < introSlides.length;
   const isAvoidStep = step === introSlides.length;
@@ -111,14 +112,14 @@ export default function OnboardingScreen() {
             style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingRight: 12 }}
           >
             <Text style={{ fontSize: 17, color: '#6D6053', fontWeight: '700', marginRight: 6 }}>←</Text>
-            <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>Back</Text>
+            <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>{t('common.back', lang)}</Text>
           </Pressable>
         ) : (
           <View style={{ width: 72 }} />
         )}
         {showSkip ? (
           <Pressable onPress={onSkipTop} hitSlop={8}>
-            <Text style={{ fontSize: 16, color: '#8A7E70', fontWeight: '600' }}>Skip</Text>
+            <Text style={{ fontSize: 16, color: '#8A7E70', fontWeight: '600' }}>{t('common.skip', lang)}</Text>
           </Pressable>
         ) : (
           <View style={{ width: 72 }} />
@@ -169,18 +170,18 @@ export default function OnboardingScreen() {
             }}
           >
             <Text style={{ fontSize: 30, lineHeight: 37, color: '#1F1A16', fontWeight: '700' }}>
-              Anything you want to avoid?
+              {t('onboard.avoid.title', lang)}
             </Text>
             <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 23, color: '#5F554A' }}>
-              Choose what matters for your family
+              {t('onboard.avoid.sub', lang)}
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
-              {AVOID_PREFERENCE_OPTIONS.map((item) => {
-                const selected = avoidPreferences.includes(item.id);
+              {AVOID_PREFERENCE_IDS.map((id) => {
+                const selected = avoidPreferences.includes(id);
                 return (
                   <Pressable
-                    key={item.id}
-                    onPress={() => toggleAvoidPreference(item.id)}
+                    key={id}
+                    onPress={() => toggleAvoidPreference(id)}
                     style={{
                       paddingVertical: 10,
                       paddingHorizontal: 13,
@@ -190,13 +191,13 @@ export default function OnboardingScreen() {
                       borderColor: selected ? '#D8C3AA' : '#E7DDCF',
                     }}
                   >
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#3A3128' }}>{item.label}</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#3A3128' }}>{avoidLabel(id, lang)}</Text>
                   </Pressable>
                 );
               })}
             </View>
             <Pressable onPress={() => setAvoidPreferencesState([])} style={{ marginTop: 16, alignSelf: 'flex-start' }}>
-              <Text style={{ fontSize: 14, color: '#8A7E70', fontWeight: '600' }}>Skip for now</Text>
+              <Text style={{ fontSize: 14, color: '#8A7E70', fontWeight: '600' }}>{t('onboard.avoid.skip', lang)}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -228,7 +229,7 @@ export default function OnboardingScreen() {
           }}
         >
           <Text style={{ color: '#FFFDF9', fontSize: 17, fontWeight: '700' }}>
-            {isFinalStep ? 'Continue' : 'Next'}
+            {isFinalStep ? t('common.continue', lang) : t('common.next', lang)}
           </Text>
         </Pressable>
       </View>

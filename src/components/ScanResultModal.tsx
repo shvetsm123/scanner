@@ -2,12 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
-import {
-  humanizePreferenceMatchLine,
-  type AvoidPreference,
-  type Plan,
-  type ResultStyle,
-} from '../types/preferences';
+import { getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
+import { localizeResultLine } from '../lib/localizeScanText';
+import type { AvoidPreference, Plan, ResultStyle } from '../types/preferences';
 import type { RecentScan } from '../types/scan';
 import { selectDistinctDisplayReasons } from '../lib/scanResultAntiRepeat';
 import { resolvedGuidanceContextLines } from '../lib/officialGuidanceContext';
@@ -45,6 +42,7 @@ export function ScanResultModal({
   onSelectInfoLevel,
   reuseNotice,
 }: ScanResultModalProps) {
+  const lang = getAppLanguage();
   const mode: ResultStyle = resolveUiResultStyle(plan, resultStyle);
   console.warn('[planDebug][resultModal] render', {
     plan,
@@ -56,9 +54,10 @@ export function ScanResultModal({
   const preferenceLines = scan?.preferenceMatches?.filter(Boolean) ?? [];
   const showAvoidSection = avoidPreferences.length > 0 && preferenceLines.length > 0;
   const nutritionLines = scan
-    ? resolvedNutritionSnapshotLinesForMode(mode, scan.nutritionSnapshot, scan.nutriments)
+    ? resolvedNutritionSnapshotLinesForMode(mode, scan.nutritionSnapshot, scan.nutriments, lang)
     : [];
   const flagLines = scan?.ingredientFlags?.filter((p) => typeof p === 'string' && p.trim()) ?? [];
+  const locLine = (s: string) => localizeResultLine(s, lang);
   const displayReasons = scan
     ? selectDistinctDisplayReasons({
         mode,
@@ -67,13 +66,15 @@ export function ScanResultModal({
         avoidPreferenceIds: avoidPreferences,
         reasons: scan.reasons ?? [],
         nutritionLines,
-      })
+      }).map(locLine)
     : [];
-  const guidanceLines = scan ? resolvedGuidanceContextLines(mode, scan) : [];
+  const guidanceLines = scan ? resolvedGuidanceContextLines(mode, scan, lang).map(locLine) : [];
   const ingredientParagraphs = (
     scan?.ingredientBreakdown?.filter((p) => typeof p === 'string' && p.trim()) ?? []
-  ).slice(0, 4);
-  const allergyLines = scan?.allergyNotes?.filter((p) => typeof p === 'string' && p.trim()) ?? [];
+  )
+    .slice(0, 4)
+    .map(locLine);
+  const allergyLines = (scan?.allergyNotes?.filter((p) => typeof p === 'string' && p.trim()) ?? []).map(locLine);
   const favoriteDisabled = favoriteLoading || !scan;
   const isUnknownNotFound =
     scan != null &&
@@ -125,7 +126,7 @@ export function ScanResultModal({
           >
             {isUnknownNotFound ? (
               <>
-                <Text style={{ fontSize: 13, color: '#8C7B6A', fontWeight: '600' }}>Scan result</Text>
+                <Text style={{ fontSize: 13, color: '#8C7B6A', fontWeight: '600' }}>{t('common.scanResult', lang)}</Text>
                 <Text
                   style={{
                     marginTop: 14,
@@ -135,12 +136,14 @@ export function ScanResultModal({
                     fontWeight: '700',
                   }}
                 >
-                  Unknown product
+                  {t('result.unknownProduct', lang)}
                 </Text>
                 <Text style={{ marginTop: 12, fontSize: 15, lineHeight: 22, color: '#5D5246' }}>
-                  We couldn’t identify this barcode. Make sure it’s clearly visible, then try again.
+                  {t('result.unknownBarcode', lang)}
                 </Text>
-                <Text style={{ marginTop: 14, fontSize: 13, color: '#817363' }}>Barcode: {scan?.barcode ?? '-'}</Text>
+                <Text style={{ marginTop: 14, fontSize: 13, color: '#817363' }}>
+                  {t('result.barcodeLabel', lang)} {scan?.barcode ?? '-'}
+                </Text>
                 <View style={{ marginTop: 24, flexDirection: 'row', gap: 10 }}>
                   <Pressable
                     onPress={onClose}
@@ -152,7 +155,7 @@ export function ScanResultModal({
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>Close</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>{t('common.close', lang)}</Text>
                   </Pressable>
                   <Pressable
                     onPress={onScanAgain}
@@ -164,13 +167,13 @@ export function ScanResultModal({
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>Try again</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>{t('common.tryAgain', lang)}</Text>
                   </Pressable>
                 </View>
               </>
             ) : (
               <>
-                <Text style={{ fontSize: 13, color: '#8C7B6A', fontWeight: '600' }}>Scan result</Text>
+                <Text style={{ fontSize: 13, color: '#8C7B6A', fontWeight: '600' }}>{t('common.scanResult', lang)}</Text>
                 {reuseNotice ? (
                   <View
                     style={{
@@ -206,7 +209,7 @@ export function ScanResultModal({
                       fontWeight: '700',
                     }}
                   >
-                    {scan?.productName ?? 'Product'}
+                    {scan?.productName ?? t('common.product', lang)}
                   </Text>
                   {scan ? (
                     <Pressable
@@ -216,9 +219,9 @@ export function ScanResultModal({
                       accessibilityLabel={
                         plan === 'unlimited'
                           ? isFavorited
-                            ? 'Remove from favorites'
-                            : 'Add to favorites'
-                          : 'Favorites with Unlimited'
+                            ? t('result.a11y.removeFav', lang)
+                            : t('result.a11y.addFav', lang)
+                          : t('result.a11y.favLocked', lang)
                       }
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       style={{
@@ -244,7 +247,9 @@ export function ScanResultModal({
                 {!!scan?.brand && (
                   <Text style={{ marginTop: 6, fontSize: 15, color: '#6D6053', fontWeight: '600' }}>{scan.brand}</Text>
                 )}
-                <Text style={{ marginTop: 8, fontSize: 13, color: '#817363' }}>Barcode: {scan?.barcode ?? '-'}</Text>
+                <Text style={{ marginTop: 8, fontSize: 13, color: '#817363' }}>
+                  {t('result.barcodeLabel', lang)} {scan?.barcode ?? '-'}
+                </Text>
 
                 {scan ? (
                   <View style={{ marginTop: 12 }}>
@@ -252,7 +257,9 @@ export function ScanResultModal({
                   </View>
                 ) : null}
 
-                <Text style={{ marginTop: 10, fontSize: 15, lineHeight: 22, color: '#4F453B' }}>{scan?.summary ?? ''}</Text>
+                <Text style={{ marginTop: 10, fontSize: 15, lineHeight: 22, color: '#4F453B' }}>
+                  {scan?.summary ? locLine(scan.summary) : ''}
+                </Text>
 
                 {scan ? (
                   <View
@@ -288,7 +295,7 @@ export function ScanResultModal({
                           color: mode === 'quick' ? '#1F1A16' : '#7A6E61',
                         }}
                       >
-                        Less info
+                        {t('result.lessInfo', lang)}
                       </Text>
                     </Pressable>
                     <Pressable
@@ -312,7 +319,7 @@ export function ScanResultModal({
                           color: mode === 'advanced' ? '#1F1A16' : '#7A6E61',
                         }}
                       >
-                        More info
+                        {t('result.moreInfo', lang)}
                       </Text>
                     </Pressable>
                   </View>
@@ -334,14 +341,14 @@ export function ScanResultModal({
                     }}
                   >
                     <Text style={{ fontSize: 14, fontWeight: '800', color: '#4A3828', letterSpacing: 0.2 }}>
-                      Matches your avoid list
+                      {t('result.matchesAvoid', lang)}
                     </Text>
                     {preferenceLines.map((line, index) => (
                       <Text
                         key={`${line}-${index}`}
                         style={{ fontSize: 14, color: '#5C4A38', lineHeight: 20, fontWeight: '600' }}
                       >
-                        • {humanizePreferenceMatchLine(line)}
+                        • {locLine(humanizePreferenceMatchLine(line, lang))}
                       </Text>
                     ))}
                   </View>
@@ -357,7 +364,7 @@ export function ScanResultModal({
 
             {mode === 'advanced' && guidanceLines.length > 0 ? (
               <View style={{ marginTop: 16 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>Official guidance context</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.officialGuidance', lang)}</Text>
                 <View style={{ marginTop: 8, gap: 8 }}>
                   {guidanceLines.map((line, index) => (
                     <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
@@ -370,7 +377,7 @@ export function ScanResultModal({
 
             {mode === 'advanced' && nutritionLines.length > 0 ? (
               <View style={{ marginTop: 18 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>Nutrition snapshot</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.nutrition', lang)}</Text>
                 <View style={{ marginTop: 10, gap: 8 }}>
                   {nutritionLines.map((line, index) => (
                     <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
@@ -383,11 +390,11 @@ export function ScanResultModal({
 
             {mode === 'advanced' && flagLines.length > 0 ? (
               <View style={{ marginTop: 18 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>Ingredient flags</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.ingredientFlags', lang)}</Text>
                 <View style={{ marginTop: 10, gap: 8 }}>
                   {flagLines.map((line, index) => (
                     <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
-                      • {line}
+                      • {locLine(line)}
                     </Text>
                   ))}
                 </View>
@@ -403,7 +410,7 @@ export function ScanResultModal({
                   borderTopColor: '#E8DFD4',
                 }}
               >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>Ingredient breakdown</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.ingredientBreakdown', lang)}</Text>
                 <View style={{ marginTop: 10, gap: 14 }}>
                   {ingredientParagraphs.map((para, index) => (
                     <Text
@@ -419,7 +426,7 @@ export function ScanResultModal({
 
             {mode === 'advanced' && allergyLines.length > 0 ? (
               <View style={{ marginTop: 18 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>Allergy notes</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>{t('result.allergyNotes', lang)}</Text>
                 <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 22, color: '#5D5246' }}>
                   {allergyLines.join(' ')}
                 </Text>
@@ -428,8 +435,8 @@ export function ScanResultModal({
 
             {mode === 'advanced' && scan?.parentTakeaway ? (
               <View style={{ marginTop: 16 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>Parent takeaway</Text>
-                <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{scan.parentTakeaway}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>{t('result.parentTakeaway', lang)}</Text>
+                <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{locLine(scan.parentTakeaway)}</Text>
               </View>
             ) : null}
 
@@ -444,7 +451,7 @@ export function ScanResultModal({
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>Close</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>{t('common.close', lang)}</Text>
                   </Pressable>
                   <Pressable
                     onPress={onScanAgain}
@@ -456,7 +463,7 @@ export function ScanResultModal({
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>Scan again</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>{t('result.scanAgain', lang)}</Text>
                   </Pressable>
                 </View>
               </>

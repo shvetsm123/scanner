@@ -1,40 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getAppLanguage, t } from '../src/lib/i18n';
 import { getPlan, getResultStyle, setPlan } from '../src/lib/storage';
 import type { Plan } from '../src/types/preferences';
-
-type PlanCardDef = {
-  id: Plan;
-  title: string;
-  subtitle: string;
-  features: string[];
-};
-
-const FREE_CARD: PlanCardDef = {
-  id: 'free',
-  title: 'Free',
-  subtitle: 'Everything you need to scan with confidence',
-  features: [
-    '2 scans per day',
-    'Less info',
-    'More info',
-    'AI analysis with child age + avoid list',
-    'Access to 4+ million products',
-  ],
-};
-
-const UNLIMITED_CARD: PlanCardDef = {
-  id: 'unlimited',
-  title: 'Unlimited',
-  subtitle: 'No daily limits and saved favorites',
-  features: ['Unlimited scans', 'Favorites'],
-};
-
-const COMING_SOON_FEATURES = ['Discussions', 'Community features', 'More tools coming soon'];
 
 function parsePlanQueryParam(raw: string | string[] | undefined): Plan | null {
   const v = Array.isArray(raw) ? raw[0] : raw;
@@ -51,9 +23,26 @@ function parsePlanQueryParam(raw: string | string[] | undefined): Plan | null {
 }
 
 export default function PaywallScreen() {
+  const lang = getAppLanguage();
   const params = useLocalSearchParams<{ plan?: string | string[] }>();
   const [currentPlan, setCurrentPlan] = useState<Plan>('free');
   const [selectedPlan, setSelectedPlan] = useState<Plan>('unlimited');
+
+  const freeFeatures = useMemo(
+    () => [
+      t('pay.feat.daily2', lang),
+      t('pay.feat.less', lang),
+      t('pay.feat.more', lang),
+      t('pay.feat.ai', lang),
+      t('pay.feat.products', lang),
+    ],
+    [lang],
+  );
+  const unlimitedFeatures = useMemo(() => [t('pay.feat.unlimScans', lang), t('pay.feat.favorites', lang)], [lang]);
+  const comingFeatures = useMemo(
+    () => [t('pay.coming.f1', lang), t('pay.coming.f2', lang), t('pay.coming.f3', lang)],
+    [lang],
+  );
 
   const load = useCallback(async () => {
     const p = await getPlan();
@@ -92,8 +81,8 @@ export default function PaywallScreen() {
   const continueDisabled = currentPlan === selectedPlan;
 
   const onComingSoonPress = useCallback(() => {
-    Alert.alert('Coming soon', 'This plan is not available yet.');
-  }, []);
+    Alert.alert(t('alert.coming.title', lang), t('alert.coming.msg', lang));
+  }, [lang]);
 
   const freeSelected = selectedPlan === 'free';
   const unlimitedSelected = selectedPlan === 'unlimited';
@@ -122,13 +111,11 @@ export default function PaywallScreen() {
           }}
         >
           <Text style={{ fontSize: 17, color: '#6D6053', fontWeight: '700', marginRight: 6 }}>←</Text>
-          <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>Back</Text>
+          <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
 
-        <Text style={{ fontSize: 30, lineHeight: 36, color: '#1F1A16', fontWeight: '700' }}>Choose your plan</Text>
-        <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: '#5F554A' }}>
-          Mock checkout — plans are stored on this device only.
-        </Text>
+        <Text style={{ fontSize: 30, lineHeight: 36, color: '#1F1A16', fontWeight: '700' }}>{t('pay.title', lang)}</Text>
+        <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: '#5F554A' }}>{t('pay.subtitle', lang)}</Text>
 
         <View
           style={{
@@ -142,11 +129,10 @@ export default function PaywallScreen() {
           }}
         >
           <Text style={{ fontSize: 14, fontWeight: '700', color: '#3D5A40' }}>
-            Current plan: {currentPlan === 'free' ? 'Free' : 'Unlimited'}
+            {t('pay.current', lang)}{' '}
+            {currentPlan === 'free' ? t('pay.planFree', lang) : t('pay.planUnlimited', lang)}
           </Text>
-          <Text style={{ marginTop: 6, fontSize: 13, color: '#5A6B5A', lineHeight: 18 }}>
-            You can switch plans below, then tap Continue.
-          </Text>
+          <Text style={{ marginTop: 6, fontSize: 13, color: '#5A6B5A', lineHeight: 18 }}>{t('pay.switchHint', lang)}</Text>
         </View>
 
         <View style={{ marginTop: 24, gap: 14 }}>
@@ -167,8 +153,8 @@ export default function PaywallScreen() {
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F1A16' }}>{FREE_CARD.title}</Text>
-                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>{FREE_CARD.subtitle}</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F1A16' }}>{t('pay.free.title', lang)}</Text>
+                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>{t('pay.free.sub', lang)}</Text>
               </View>
               {currentPlan === 'free' ? (
                 <View
@@ -179,12 +165,12 @@ export default function PaywallScreen() {
                     backgroundColor: '#E8EFE8',
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#3D5A40' }}>Current</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#3D5A40' }}>{t('pay.badge.current', lang)}</Text>
                 </View>
               ) : null}
             </View>
             <View style={{ marginTop: 16, gap: 8 }}>
-              {FREE_CARD.features.map((f) => (
+              {freeFeatures.map((f) => (
                 <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: '#4F453B', fontWeight: '600' }}>
                   • {f}
                 </Text>
@@ -209,8 +195,10 @@ export default function PaywallScreen() {
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F1A16' }}>{UNLIMITED_CARD.title}</Text>
-                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>{UNLIMITED_CARD.subtitle}</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F1A16' }}>{t('pay.unlimited.title', lang)}</Text>
+                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>
+                  {t('pay.unlimited.sub', lang)}
+                </Text>
               </View>
               {currentPlan === 'unlimited' ? (
                 <View
@@ -221,12 +209,12 @@ export default function PaywallScreen() {
                     backgroundColor: '#E8EFE8',
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#3D5A40' }}>Current</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#3D5A40' }}>{t('pay.badge.current', lang)}</Text>
                 </View>
               ) : null}
             </View>
             <View style={{ marginTop: 16, gap: 8 }}>
-              {UNLIMITED_CARD.features.map((f) => (
+              {unlimitedFeatures.map((f) => (
                 <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: '#4F453B', fontWeight: '600' }}>
                   • {f}
                 </Text>
@@ -247,8 +235,8 @@ export default function PaywallScreen() {
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: '#8A7E70' }}>Coming soon</Text>
-                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#9A8E82' }}>Not available yet</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#8A7E70' }}>{t('pay.coming.title', lang)}</Text>
+                <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: '#9A8E82' }}>{t('pay.coming.sub', lang)}</Text>
               </View>
               <View
                 style={{
@@ -258,11 +246,11 @@ export default function PaywallScreen() {
                   backgroundColor: '#E8E2DC',
                 }}
               >
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#7A6E61' }}>SOON</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#7A6E61' }}>{t('pay.coming.badge', lang)}</Text>
               </View>
             </View>
             <View style={{ marginTop: 16, gap: 8 }}>
-              {COMING_SOON_FEATURES.map((f) => (
+              {comingFeatures.map((f) => (
                 <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: '#958676', fontWeight: '600' }}>
                   • {f}
                 </Text>
@@ -283,12 +271,12 @@ export default function PaywallScreen() {
           }}
         >
           <Text style={{ color: '#FFFDF9', fontSize: 17, fontWeight: '700' }}>
-            {continueDisabled ? 'Current selection' : 'Continue'}
+            {continueDisabled ? t('pay.currentSelection', lang) : t('pay.continue', lang)}
           </Text>
         </Pressable>
 
         <Pressable onPress={goBack} style={{ marginTop: 12, paddingVertical: 14, alignItems: 'center' }}>
-          <Text style={{ fontSize: 16, fontWeight: '600', color: '#5F554A' }}>Maybe later</Text>
+          <Text style={{ fontSize: 16, fontWeight: '600', color: '#5F554A' }}>{t('pay.maybeLater', lang)}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

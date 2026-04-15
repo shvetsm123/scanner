@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getAppLanguage, t } from '../src/lib/i18n';
 import { getChildAge, pushSupabasePreferencesFromLocal, setChildAge } from '../src/lib/storage';
 
 const MIN_AGE = 1;
@@ -11,6 +12,7 @@ const MAX_AGE = 16;
 const DEFAULT_AGE = 4;
 
 export default function AgeScreen() {
+  const lang = getAppLanguage();
   const { edit } = useLocalSearchParams<{ edit?: string | string[] }>();
   const editFlag = Array.isArray(edit) ? edit[0] : edit;
   const isEdit = editFlag === '1' || editFlag === 'true';
@@ -67,15 +69,11 @@ export default function AgeScreen() {
             }}
           >
             <Text style={{ fontSize: 17, color: '#6D6053', fontWeight: '700', marginRight: 6 }}>←</Text>
-            <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>Back</Text>
+            <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>{t('common.back', lang)}</Text>
           </Pressable>
         ) : null}
-        <Text style={{ fontSize: 34, lineHeight: 42, color: '#1F1A16', fontWeight: '700' }}>
-          How old is your child?
-        </Text>
-        <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 25, color: '#5F554A' }}>
-          We’ll adapt results to your child’s age
-        </Text>
+        <Text style={{ fontSize: 34, lineHeight: 42, color: '#1F1A16', fontWeight: '700' }}>{t('age.title', lang)}</Text>
+        <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 25, color: '#5F554A' }}>{t('age.subtitle', lang)}</Text>
       </View>
 
       <View
@@ -110,7 +108,7 @@ export default function AgeScreen() {
 
         <View style={{ alignItems: 'center' }}>
           <Text style={{ fontSize: 42, fontWeight: '700', color: '#1F1A16' }}>{age}</Text>
-          <Text style={{ marginTop: 4, color: '#7B6F61', fontSize: 13 }}>years old</Text>
+          <Text style={{ marginTop: 4, color: '#7B6F61', fontSize: 13 }}>{t('age.yearsOld', lang)}</Text>
         </View>
 
         <Pressable
@@ -139,7 +137,7 @@ export default function AgeScreen() {
         }}
       >
         <Text style={{ color: '#FFFDF9', fontSize: 17, fontWeight: '700' }}>
-          {isEdit ? 'Save' : 'Continue'}
+          {isEdit ? t('common.save', lang) : t('common.continue', lang)}
         </Text>
       </Pressable>
     </SafeAreaView>

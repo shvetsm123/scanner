@@ -1,4 +1,5 @@
 import type { NormalizedProduct } from '../api/openFoodFacts';
+import type { AppLanguage } from './deviceLanguage';
 import type { AvoidPreference, ResultStyle } from '../types/preferences';
 import type { KidsAiInput } from '../types/ai';
 import type { Verdict } from '../types/scan';
@@ -11,6 +12,7 @@ export function buildAiInput(
   avoidPreferences: AvoidPreference[],
   resultStyle: ResultStyle,
   ruleBasedBaseVerdict: Verdict,
+  outputLanguage: AppLanguage,
 ): KidsAiInput {
   const age = typeof childAge === 'number' && Number.isFinite(childAge) ? childAge : DEFAULT_CHILD_AGE;
 
@@ -19,6 +21,7 @@ export function buildAiInput(
     childAge: age,
     ruleBasedBaseVerdict,
     resultStyle,
+    outputLanguage,
     product: {
       barcode: product.barcode,
       productName: product.productName,

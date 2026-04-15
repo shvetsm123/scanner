@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RecentScanCard } from '../src/components/RecentScanCard';
 import { ScanResultModal } from '../src/components/ScanResultModal';
 import { ScannerModal } from '../src/components/ScannerModal';
+import { getAppLanguage, t } from '../src/lib/i18n';
 import { buildRecentScanFromBarcode, createFallbackRecentScan } from '../src/lib/mockScanResult';
 import { showFavoritesUnlimitedUpsell } from '../src/lib/favoritesInsightsAlert';
 import { buildScanAnalysisContextKey, findRecentScanForReuse } from '../src/lib/scanAnalysisContext';
@@ -53,6 +54,7 @@ import type { AvoidPreference, Plan, ResultStyle } from '../src/types/preference
 import type { RecentScan } from '../src/types/scan';
 
 function recentScanFromFavoriteItem(item: FavoriteListItem, recent: RecentScan[]): RecentScan {
+  const lang = getAppLanguage();
   const hit = recent.find((s) => s.barcode.trim() === item.barcode.trim());
   if (hit) {
     return hit;
@@ -65,29 +67,26 @@ function recentScanFromFavoriteItem(item: FavoriteListItem, recent: RecentScan[]
     imageUrl: item.imageUrl ?? undefined,
     baseVerdict: 'unknown',
     verdict: 'unknown',
-    summary: 'Saved favorite — scan again for an updated check.',
-    reasons: ['No live product data on this device', 'Scan for sugar, salt, and ingredients', 'Labels and formulas can change'],
+    summary: t('home.favorite.summary', lang),
+    reasons: [t('home.favorite.r1', lang), t('home.favorite.r2', lang), t('home.favorite.r3', lang)],
     scannedAt: new Date().toISOString(),
     nutritionSnapshot: [],
     ingredientFlags: [],
-    ingredientBreakdown: [
-      'This favorite was opened without a stored scan on this device, so there is no fresh ingredient list or nutrition snapshot to review here.',
-      'Scan the barcode again to load the product page and get a fact-based breakdown for your child’s age.',
-    ],
+    ingredientBreakdown: [t('home.favorite.b1', lang), t('home.favorite.b2', lang)],
     allergyNotes: [],
-    parentTakeaway: 'Scan again when you have the package.',
+    parentTakeaway: t('home.favorite.parent', lang),
   };
 }
 
-function freeDailyScanUsageLabel(successCount: number): string {
+function freeDailyScanUsageLabel(successCount: number, lang: ReturnType<typeof getAppLanguage>): string {
   const c = Math.min(2, Math.max(0, successCount));
   if (c === 0) {
-    return '2 scans left today';
+    return t('home.scansLeft0', lang);
   }
   if (c === 1) {
-    return '1 of 2 scans used today';
+    return t('home.scansLeft1', lang);
   }
-  return '2 of 2 scans used today';
+  return t('home.scansLeft2', lang);
 }
 
 type DailyScanSnapshot = { dateKey: string; count: number };
@@ -109,6 +108,7 @@ type PendingPostScanOutcome =
 const POST_SCAN_RESULT_DELAY_MS = Platform.OS === 'ios' ? 80 : 0;
 
 export default function HomeScreen() {
+  const lang = getAppLanguage();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [resultModalVisible, setResultModalVisible] = useState(false);
@@ -230,8 +230,8 @@ export default function HomeScreen() {
         setUnknownResultVisible(false);
         setUnknownScan(null);
         setScanError({
-          title: 'Something went wrong',
-          message: 'Something went wrong. Please try scanning again.',
+          title: t('common.somethingWrong', getAppLanguage()),
+          message: t('error.scanAgain', getAppLanguage()),
         });
         if (typeof __DEV__ !== 'undefined' && __DEV__) {
           console.warn('[scanFlow] error visible');
@@ -519,7 +519,7 @@ export default function HomeScreen() {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         pendingPostScanOutcomeRef.current = {
           kind: 'known',
-          reuseBanner: 'Already scanned — opening saved result',
+          reuseBanner: t('scan.reuseBanner', getAppLanguage()),
           nextScans: freshRecent,
           modalScan: reusable,
           activeId: reusable.id,
@@ -601,9 +601,8 @@ export default function HomeScreen() {
         console.warn('[home] scan save failed', err);
         pendingPostScanOutcomeRef.current = {
           kind: 'error',
-          title: 'Something went wrong',
-          message:
-            err instanceof Error ? err.message : 'Could not save this scan. Please try again or close and scan again.',
+          title: t('common.somethingWrong', getAppLanguage()),
+          message: err instanceof Error ? err.message : t('error.saveScan', getAppLanguage()),
         };
         if (typeof __DEV__ !== 'undefined' && __DEV__) {
           console.warn('[scanFlow] pending outcome stored', { kind: 'error', reason: 'save_failed' });
@@ -619,8 +618,8 @@ export default function HomeScreen() {
       console.warn('[home] handleBarcodeScanned', err);
       pendingPostScanOutcomeRef.current = {
         kind: 'error',
-        title: 'Something went wrong',
-        message: err instanceof Error ? err.message : 'Something went wrong. Please try again.',
+        title: t('common.somethingWrong', getAppLanguage()),
+        message: err instanceof Error ? err.message : t('error.generic', getAppLanguage()),
       };
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn('[scanFlow] pending outcome stored', { kind: 'error', reason: 'pipeline' });
@@ -798,7 +797,7 @@ export default function HomeScreen() {
                   backgroundColor: '#EBDDCB',
                 }}
               >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#5B4A38' }}>Upgrade</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#5B4A38' }}>{t('common.upgrade', lang)}</Text>
               </Pressable>
             ) : (
               <Pressable
@@ -812,7 +811,9 @@ export default function HomeScreen() {
                   borderColor: '#D9D0C6',
                 }}
               >
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B6158', letterSpacing: 0.4 }}>Unlimited</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B6158', letterSpacing: 0.4 }}>
+                  {t('common.unlimited', lang)}
+                </Text>
               </Pressable>
             )}
           </View>
@@ -826,7 +827,7 @@ export default function HomeScreen() {
                 letterSpacing: 0.2,
               }}
             >
-              {freeDailyScanUsageLabel(dailyScanState.count)}
+              {freeDailyScanUsageLabel(dailyScanState.count, lang)}
             </Text>
           ) : null}
         </View>
@@ -844,10 +845,10 @@ export default function HomeScreen() {
           }}
         >
           <Text style={{ fontSize: 29, lineHeight: 34, fontWeight: '700', color: '#1F1A16' }}>
-            Scan a barcode
+            {t('home.scanTitle', lang)}
           </Text>
           <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 23, color: '#5F554A' }}>
-            Tap below when you are ready — the camera opens only while scanning.
+            {t('home.scanSubtitle', lang)}
           </Text>
 
           <View
@@ -876,12 +877,12 @@ export default function HomeScreen() {
               alignItems: 'center',
             }}
           >
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFDF9' }}>Scan product</Text>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFDF9' }}>{t('home.scanProduct', lang)}</Text>
           </Pressable>
         </View>
 
         <View style={{ gap: 12 }}>
-          <Text style={{ fontSize: 21, fontWeight: '700', color: '#1F1A16' }}>Recent scans</Text>
+          <Text style={{ fontSize: 21, fontWeight: '700', color: '#1F1A16' }}>{t('home.recentScans', lang)}</Text>
 
           {recentScans.length === 0 ? (
             <>
@@ -922,11 +923,11 @@ export default function HomeScreen() {
         </View>
 
         <View style={{ gap: 10 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Favorites</Text>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>{t('home.favorites', lang)}</Text>
           {plan === 'unlimited' ? (
             favoritesList.length === 0 ? (
               <Text style={{ fontSize: 14, color: '#9A8E82', fontWeight: '600', fontStyle: 'italic' }}>
-                No favorites yet
+                {t('home.noFavorites', lang)}
               </Text>
             ) : (
               favoritesList.map((item) => (
@@ -975,7 +976,7 @@ export default function HomeScreen() {
               }}
             >
               <Ionicons name="lock-closed-outline" size={16} color="#B59B7A" />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#8A7E70' }}>Favorites · Unlimited</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#8A7E70' }}>{t('home.favoritesLocked', lang)}</Text>
             </Pressable>
           )}
         </View>
@@ -1005,7 +1006,7 @@ export default function HomeScreen() {
               paddingHorizontal: 12,
             }}
           >
-            <Text style={{ fontSize: 12, color: '#A89888', fontWeight: '600' }}>Reset app data</Text>
+            <Text style={{ fontSize: 12, color: '#A89888', fontWeight: '600' }}>{t('home.resetDev', lang)}</Text>
           </Pressable>
         ) : null}
       </ScrollView>
@@ -1045,7 +1046,7 @@ export default function HomeScreen() {
                   paddingVertical: 13,
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>Close</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>{t('common.close', lang)}</Text>
               </Pressable>
               <Pressable
                 onPress={onScanErrorTryAgain}
@@ -1057,7 +1058,7 @@ export default function HomeScreen() {
                   paddingVertical: 13,
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>Try again</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>{t('common.tryAgain', lang)}</Text>
               </Pressable>
             </View>
           </View>
@@ -1086,15 +1087,15 @@ export default function HomeScreen() {
               maxWidth: 360,
             }}
           >
-            <Text style={{ fontSize: 13, color: '#8C7B6A', fontWeight: '600' }}>Scan result</Text>
+            <Text style={{ fontSize: 13, color: '#8C7B6A', fontWeight: '600' }}>{t('common.scanResult', lang)}</Text>
             <Text style={{ marginTop: 14, fontSize: 26, lineHeight: 32, color: '#1F1A16', fontWeight: '700' }}>
-              Unknown product
+              {t('result.unknownProduct', lang)}
             </Text>
             <Text style={{ marginTop: 12, fontSize: 15, lineHeight: 22, color: '#5D5246' }}>
-              {"We couldn't identify this product yet."}
+              {t('result.unknownBody', lang)}
             </Text>
             <Text style={{ marginTop: 14, fontSize: 13, color: '#817363' }}>
-              Barcode: {String(unknownScan.barcode ?? '').trim() || '-'}
+              {t('result.barcodeLabel', lang)} {String(unknownScan.barcode ?? '').trim() || '-'}
             </Text>
             <View style={{ marginTop: 24, flexDirection: 'row', gap: 10 }}>
               <Pressable
@@ -1107,7 +1108,7 @@ export default function HomeScreen() {
                   paddingVertical: 13,
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>Close</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#5B4A38' }}>{t('common.close', lang)}</Text>
               </Pressable>
               <Pressable
                 onPress={onUnknownTryAgain}
@@ -1119,7 +1120,7 @@ export default function HomeScreen() {
                   paddingVertical: 13,
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>Try again</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>{t('common.tryAgain', lang)}</Text>
               </Pressable>
             </View>
           </View>
@@ -1182,10 +1183,10 @@ export default function HomeScreen() {
           >
             <ActivityIndicator size="large" color="#2C251F" />
             <Text style={{ marginTop: 16, fontSize: 17, fontWeight: '700', color: '#1F1A16', textAlign: 'center' }}>
-              Checking product…
+              {t('loading.checking', lang)}
             </Text>
             <Text style={{ marginTop: 8, fontSize: 14, color: '#6D6053', textAlign: 'center', lineHeight: 20 }}>
-              Please wait
+              {t('loading.wait', lang)}
             </Text>
           </View>
         </View>

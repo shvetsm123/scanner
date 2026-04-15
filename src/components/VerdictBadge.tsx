@@ -1,25 +1,26 @@
 import { Text, View } from 'react-native';
 
+import { getAppLanguage, t } from '../lib/i18n';
 import type { Verdict } from '../types/scan';
 
-const VERDICT_STYLES: Record<Verdict, { label: string; backgroundColor: string; color: string }> = {
+const VERDICT_STYLES: Record<Verdict, { key: 'verdict.good' | 'verdict.sometimes' | 'verdict.avoid' | 'verdict.unknown'; backgroundColor: string; color: string }> = {
   good: {
-    label: 'Good',
+    key: 'verdict.good',
     backgroundColor: '#E6F4EA',
     color: '#2E6C45',
   },
   sometimes: {
-    label: 'Sometimes',
+    key: 'verdict.sometimes',
     backgroundColor: '#FCECD9',
     color: '#8A5A18',
   },
   avoid: {
-    label: 'Avoid',
+    key: 'verdict.avoid',
     backgroundColor: '#F8E1E1',
     color: '#8A2D2D',
   },
   unknown: {
-    label: 'Unknown',
+    key: 'verdict.unknown',
     backgroundColor: '#ECECEC',
     color: '#5D5D5D',
   },
@@ -30,6 +31,7 @@ type VerdictBadgeProps = {
 };
 
 export function VerdictBadge({ verdict }: VerdictBadgeProps) {
+  const lang = getAppLanguage();
   const config = VERDICT_STYLES[verdict];
 
   return (
@@ -42,7 +44,7 @@ export function VerdictBadge({ verdict }: VerdictBadgeProps) {
         backgroundColor: config.backgroundColor,
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '700', color: config.color }}>{config.label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '700', color: config.color }}>{t(config.key, lang)}</Text>
     </View>
   );
 }

@@ -1,6 +1,10 @@
 import type { AiResult } from '../types/ai';
 import type { Plan, ResultStyle } from '../types/preferences';
 import type { Verdict } from '../types/scan';
+import type { AppLanguage } from './deviceLanguage';
+import { getAppLanguage } from './deviceLanguage';
+import { localizeResultLine } from './localizeScanText';
+import { t } from './i18n';
 import { clampFinalVerdictToBase } from './preferenceMatchers';
 
 /** Scan result UI depth: both plans use the stored Less/More (quick/advanced) preference. */
@@ -114,38 +118,63 @@ function roundNutrient(v: number): string {
 /**
  * Builds plain nutrition lines from Open Food Facts nutriments when the model did not supply a snapshot.
  */
-export function formatNutritionSnapshotFromNutriments(nm?: Record<string, number>): string[] {
+export function formatNutritionSnapshotFromNutriments(nm: Record<string, number> | undefined, lang: AppLanguage): string[] {
   if (!nm || typeof nm !== 'object') {
     return [];
   }
   const lines: string[] = [];
+
+  const kcal = nm['energy-kcal_100g'];
+  if (typeof kcal === 'number' && Number.isFinite(kcal)) {
+    lines.push(t('nut.line.energyKcal', lang, { v: String(Math.round(kcal)) }));
+  } else {
+    const kj = nm['energy_100g'];
+    if (typeof kj === 'number' && Number.isFinite(kj)) {
+      lines.push(t('nut.line.energyKj', lang, { v: String(Math.round(kj)) }));
+    }
+  }
+
   const sugars = nm['sugars_100g'];
   if (typeof sugars === 'number' && Number.isFinite(sugars)) {
-    lines.push(`Sugar: ${roundNutrient(sugars)} g / 100 g`);
+    lines.push(t('nut.line.sugarG', lang, { v: roundNutrient(sugars) }));
   }
+
   const salt = nm['salt_100g'];
   if (typeof salt === 'number' && Number.isFinite(salt)) {
-    lines.push(`Salt: ${roundNutrient(salt)} g / 100 g`);
+    lines.push(t('nut.line.saltG', lang, { v: roundNutrient(salt) }));
   } else {
     const sodium = nm['sodium_100g'];
     if (typeof sodium === 'number' && Number.isFinite(sodium)) {
       const mg = sodium * 1000;
-      lines.push(`Sodium: ${Math.round(mg)} mg / 100 g`);
+      lines.push(t('nut.line.sodiumMg', lang, { v: String(Math.round(mg)) }));
     }
   }
+
   const sat = nm['saturated-fat_100g'];
   if (typeof sat === 'number' && Number.isFinite(sat)) {
-    lines.push(`Saturated fat: ${roundNutrient(sat)} g / 100 g`);
+    lines.push(t('nut.line.satFatG', lang, { v: roundNutrient(sat) }));
   }
-  const kcal = nm['energy-kcal_100g'];
-  if (typeof kcal === 'number' && Number.isFinite(kcal)) {
-    lines.push(`Energy: ${Math.round(kcal)} kcal / 100 g`);
-  } else {
-    const kj = nm['energy_100g'];
-    if (typeof kj === 'number' && Number.isFinite(kj)) {
-      lines.push(`Energy: ${Math.round(kj)} kJ / 100 g`);
-    }
+
+  const fat = nm['fat_100g'];
+  if (typeof fat === 'number' && Number.isFinite(fat)) {
+    lines.push(t('nut.line.fatG', lang, { v: roundNutrient(fat) }));
   }
+
+  const carbs = nm['carbohydrates_100g'];
+  if (typeof carbs === 'number' && Number.isFinite(carbs)) {
+    lines.push(t('nut.line.carbsG', lang, { v: roundNutrient(carbs) }));
+  }
+
+  const fiber = nm['fiber_100g'] ?? nm['fibre_100g'];
+  if (typeof fiber === 'number' && Number.isFinite(fiber)) {
+    lines.push(t('nut.line.fiberG', lang, { v: roundNutrient(fiber) }));
+  }
+
+  const protein = nm['proteins_100g'];
+  if (typeof protein === 'number' && Number.isFinite(protein)) {
+    lines.push(t('nut.line.proteinG', lang, { v: roundNutrient(protein) }));
+  }
+
   return lines;
 }
 
@@ -161,8 +190,9 @@ function normNutritionLineKey(s: string): string {
 export function resolvedNutritionSnapshotLines(
   snapshot: string[] | undefined,
   nutriments: Record<string, number> | undefined,
+  lang: AppLanguage = getAppLanguage(),
 ): string[] {
-  return resolvedNutritionSnapshotLinesForMode('quick', snapshot, nutriments);
+  return resolvedNutritionSnapshotLinesForMode('quick', snapshot, nutriments, lang);
 }
 
 /** Advanced merges listing nutriments with the model snapshot when both exist. */
@@ -170,32 +200,36 @@ export function resolvedNutritionSnapshotLinesForMode(
   mode: ResultStyle,
   snapshot: string[] | undefined,
   nutriments: Record<string, number> | undefined,
+  lang: AppLanguage = getAppLanguage(),
 ): string[] {
   const fromAi = snapshot?.map((s) => s.trim()).filter(Boolean) ?? [];
-  const fromOff = formatNutritionSnapshotFromNutriments(nutriments);
+  const fromOff = formatNutritionSnapshotFromNutriments(nutriments, lang);
+  let merged: string[];
   if (mode !== 'advanced') {
-    return fromAi.length > 0 ? fromAi : fromOff;
-  }
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const line of fromAi) {
-    const k = normNutritionLineKey(line);
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(line.trim());
+    merged = fromAi.length > 0 ? fromAi : fromOff;
+  } else {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const line of fromAi) {
+      const k = normNutritionLineKey(line);
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(line.trim());
+      }
     }
-  }
-  for (const line of fromOff) {
-    const k = normNutritionLineKey(line);
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(line);
+    for (const line of fromOff) {
+      const k = normNutritionLineKey(line);
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(line);
+      }
+      if (out.length >= 14) {
+        break;
+      }
     }
-    if (out.length >= 14) {
-      break;
-    }
+    merged = out;
   }
-  return out;
+  return merged.map((line) => localizeResultLine(line.trim(), lang));
 }
 
 /**

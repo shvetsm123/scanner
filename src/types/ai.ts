@@ -1,3 +1,4 @@
+import type { AppLanguage } from '../lib/deviceLanguage';
 import type { AvoidPreference, ResultStyle } from './preferences';
 import type { Verdict } from './scan';
 
@@ -30,6 +31,8 @@ export type KidsAiInput = {
   ruleBasedBaseVerdict: Verdict;
   /** Shown result depth; does not change verdict. */
   resultStyle: ResultStyle;
+  /** BCP-47 language code root (e.g. en, de); AI must write explanatory text in this language. */
+  outputLanguage: AppLanguage;
   /** Omitted when the parent has not selected any avoid topics. */
   avoidPreferences?: AvoidPreference[];
   product: {

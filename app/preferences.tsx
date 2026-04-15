@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { avoidLabel, getAppLanguage, t } from '../src/lib/i18n';
 import {
   getAvoidPreferences,
   getChildAge,
@@ -18,6 +19,7 @@ const MAX_AGE = 16;
 const DEFAULT_AGE = 4;
 
 export default function PreferencesScreen() {
+  const lang = getAppLanguage();
   const [ready, setReady] = useState(false);
   const [age, setAge] = useState(DEFAULT_AGE);
   const [avoidList, setAvoidList] = useState<AvoidPreference[]>([]);
@@ -101,7 +103,7 @@ export default function PreferencesScreen() {
           }}
         >
           <Text style={{ fontSize: 17, color: '#6D6053', fontWeight: '700', marginRight: 6 }}>←</Text>
-          <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>Back</Text>
+          <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="small" color="#8A7E70" />
@@ -134,16 +136,16 @@ export default function PreferencesScreen() {
           }}
         >
           <Text style={{ fontSize: 17, color: '#6D6053', fontWeight: '700', marginRight: 6 }}>←</Text>
-          <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>Back</Text>
+          <Text style={{ fontSize: 16, color: '#6D6053', fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
-        <Text style={{ fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#1F1A16' }}>Preferences</Text>
+        <Text style={{ fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#1F1A16' }}>{t('prefs.title', lang)}</Text>
         <Text style={{ marginTop: 8, fontSize: 15, lineHeight: 22, color: '#6D6053' }}>
-          Update how scans are tailored for your family
+          {t('prefs.subtitle', lang)}
         </Text>
 
         <View style={{ marginTop: 28 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Child age</Text>
-          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>Used to adapt product checks</Text>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>{t('prefs.childAge', lang)}</Text>
+          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>{t('prefs.childAgeHelp', lang)}</Text>
           <View
             style={{
               marginTop: 14,
@@ -196,8 +198,8 @@ export default function PreferencesScreen() {
         </View>
 
         <View style={{ marginTop: 32 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>Avoid list</Text>
-          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>Choose what matters for your family</Text>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1F1A16' }}>{t('prefs.avoidList', lang)}</Text>
+          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: '#7A6E61' }}>{t('prefs.avoidHelp', lang)}</Text>
           <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             {AVOID_PREFERENCE_OPTIONS.map((item) => {
               const selected = avoidList.includes(item.id);
@@ -214,7 +216,9 @@ export default function PreferencesScreen() {
                     borderColor: selected ? '#C9A06E' : '#E4D9CC',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: selected ? '#3D3429' : '#5F554A' }}>{item.label}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: selected ? '#3D3429' : '#5F554A' }}>
+                    {avoidLabel(item.id, lang)}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -232,11 +236,13 @@ export default function PreferencesScreen() {
             alignItems: 'center',
           }}
         >
-          <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFDF9' }}>{saving ? 'Saving…' : 'Save changes'}</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFDF9' }}>
+            {saving ? t('prefs.saving', lang) : t('prefs.save', lang)}
+          </Text>
         </Pressable>
 
         <Pressable onPress={onCancel} disabled={saving} style={{ marginTop: 16, paddingVertical: 12, alignItems: 'center' }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: '#8A7E70' }}>Cancel</Text>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#8A7E70' }}>{t('common.cancel', lang)}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getAppLanguage, t } from '../lib/i18n';
 import { ScannerFrame } from './ScannerFrame';
 
 const COMMON_PRODUCT_BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'itf14'];
@@ -34,6 +35,7 @@ export function ScannerModal({
   cameraPermission,
   onRequestPermission,
 }: ScannerModalProps) {
+  const lang = getAppLanguage();
   const granted = cameraPermission?.granted === true;
   const [torchOn, setTorchOn] = useState(false);
 
@@ -87,7 +89,7 @@ export function ScannerModal({
                 onPress={toggleTorch}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 accessibilityRole="button"
-                accessibilityLabel={torchOn ? 'Turn flashlight off' : 'Turn flashlight on'}
+                accessibilityLabel={torchOn ? t('scanner.a11y.torchOff', lang) : t('scanner.a11y.torchOn', lang)}
                 style={{
                   position: 'absolute',
                   top: 8,
@@ -113,7 +115,7 @@ export function ScannerModal({
 
             {cameraPermission === null ? (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
-                <Text style={{ color: 'rgba(255,253,248,0.75)', fontSize: 15 }}>Loading camera…</Text>
+                <Text style={{ color: 'rgba(255,253,248,0.75)', fontSize: 15 }}>{t('scanner.loadingCamera', lang)}</Text>
               </View>
             ) : granted ? (
               <View style={{ flex: 1 }}>
@@ -122,7 +124,7 @@ export function ScannerModal({
                   style={{ flex: 1 }}
                   facing="back"
                   enableTorch={torchOn}
-                  barcodeScannerSettings={{ barcodeTypes: COMMON_PRODUCT_BARCODE_TYPES }}
+                  barcodeScannerSettings={{ barcodeTypes: [...COMMON_PRODUCT_BARCODE_TYPES] as never }}
                   onBarcodeScanned={canReadCodes ? onBarcodeScanned : undefined}
                 />
                 <ScannerFrame />
@@ -151,7 +153,7 @@ export function ScannerModal({
                         lineHeight: 24,
                       }}
                     >
-                      Daily scan limit reached
+                      {t('scanner.dailyLimitTitle', lang)}
                     </Text>
                     <Text
                       style={{
@@ -162,7 +164,7 @@ export function ScannerModal({
                         lineHeight: 20,
                       }}
                     >
-                      Unlimited scans remove daily limits.
+                      {t('scanner.dailyLimitBody', lang)}
                     </Text>
                     <View
                       style={{
@@ -173,7 +175,7 @@ export function ScannerModal({
                         backgroundColor: '#FFFDF8',
                       }}
                     >
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#2C251F' }}>View plans</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#2C251F' }}>{t('scanner.viewPlans', lang)}</Text>
                     </View>
                   </Pressable>
                 ) : null}
@@ -181,7 +183,7 @@ export function ScannerModal({
             ) : (
               <View style={{ flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 20, color: '#FFFDF8', fontWeight: '700', textAlign: 'center' }}>
-                  Camera access needed
+                  {t('scanner.cameraNeeded', lang)}
                 </Text>
                 <Text
                   style={{
@@ -192,7 +194,7 @@ export function ScannerModal({
                     lineHeight: 22,
                   }}
                 >
-                  Allow camera to scan barcodes
+                  {t('scanner.allowCamera', lang)}
                 </Text>
                 <Pressable
                   onPress={onRequestPermission}
@@ -204,7 +206,7 @@ export function ScannerModal({
                     paddingVertical: 12,
                   }}
                 >
-                  <Text style={{ color: '#2C251F', fontSize: 15, fontWeight: '700' }}>Grant access</Text>
+                  <Text style={{ color: '#2C251F', fontSize: 15, fontWeight: '700' }}>{t('scanner.grantAccess', lang)}</Text>
                 </Pressable>
               </View>
             )}

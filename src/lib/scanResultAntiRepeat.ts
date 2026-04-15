@@ -1,4 +1,4 @@
-import { humanizePreferenceMatchLine } from '../types/preferences';
+import { humanizePreferenceMatchLine } from './i18n';
 
 function normalizeLoose(s: string): string {
   return s

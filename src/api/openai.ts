@@ -2,6 +2,8 @@ import { fetch as expoFetch } from 'expo/fetch';
 import { Platform } from 'react-native';
 
 import { buildOfficialGuidanceContextLines } from '../lib/officialGuidanceContext';
+import { localizeAiResultStrings } from '../lib/localizeScanText';
+import { OUTPUT_LANGUAGE_NAMES } from '../lib/i18n';
 import { getFallbackAiResult } from '../lib/getFallbackAiResult';
 import { normalizeCanonicalAiPayload } from '../lib/resultStyleHelpers';
 import type { AiResult, KidsAiInput } from '../types/ai';
@@ -12,6 +14,11 @@ const MODEL = 'gpt-4o-mini';
 const LOG_PREFIX = '[OpenAI]';
 
 const SYSTEM_PROMPT = `You write scan results for ONE packaged food or drink for parents, childAge in the input. Output JSON ONLY. No markdown.
+
+OUTPUT LANGUAGE (mandatory)
+- The user message includes OUTPUT_LANGUAGE. Every natural-language string in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, parentTakeaway, guidanceContext) MUST be written entirely in that language.
+- Do not mix languages: no English nutrient labels, phrases, or sentences when OUTPUT_LANGUAGE is not English. In non-English outputs, translate terms such as sugar, salt, sodium, saturated fat, fat, carbohydrates, protein, fiber, energy, kcal, kJ into the OUTPUT_LANGUAGE (use standard nutrition wording parents expect in that locale).
+- Keep JSON keys in English. Copy product.productName, product.brand, product.barcode verbatim from input; keep raw ingredient tokens from the listing as in the data when you must quote them.
 
 CORE ORDER
 1) Facts from the listing first (ingredients_text, allergens, categories, nutriments, product_name, brand, barcode only—no guessing).
@@ -126,7 +133,7 @@ function enrichGuidanceContext(input: KidsAiInput, evaluation: AiResult): AiResu
     brand: input.product.brand,
     ingredientsText: input.product.ingredientsText,
     categories: input.product.categories,
-  });
+  }, input.outputLanguage);
   return { ...evaluation, guidanceContext: filled.slice(0, 3) };
 }
 
@@ -155,7 +162,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
 
   if (!keyPresent) {
     console.warn(LOG_PREFIX, 'using fallback: missing API key');
-    return getFallbackAiResult(ruleBase, input.resultStyle);
+    return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
   }
 
   const requestUrl = getOpenAiChatUrl();
@@ -176,7 +183,12 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `Evaluate this input. Reply with JSON only:\n${JSON.stringify(input)}\n\n${depthInstructionsForResultStyle(input.resultStyle)}`,
+            content: `OUTPUT_LANGUAGE: ${input.outputLanguage} (${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}). Write 100% of explanatory text in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} only—no English fragments, no mixed-language lines, no English-only nutrient labels (e.g. do not output "Sugar: …" when the language is Russian; use the correct ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} wording for every label and sentence). All natural-language string values in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, parentTakeaway, guidanceContext) MUST be in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}. Keep JSON keys in English. Keep verbatim from input: product.productName, product.brand, product.barcode; do not translate raw ingredient tokens from the listing when quoting them. Verdict fields baseVerdict and finalVerdict must remain exactly one of: good, sometimes, avoid, unknown.
+
+Evaluate this input. Reply with JSON only:
+${JSON.stringify(input)}
+
+${depthInstructionsForResultStyle(input.resultStyle)}`,
           },
         ],
       }),
@@ -189,7 +201,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
 
     if (!response.ok) {
       console.warn(LOG_PREFIX, 'using fallback: HTTP not OK, status', response.status);
-      return getFallbackAiResult(ruleBase, input.resultStyle);
+      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
     }
 
     let data: { choices?: { message?: { content?: string } }[] };
@@ -197,22 +209,23 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
       data = JSON.parse(rawText) as { choices?: { message?: { content?: string } }[] };
     } catch (parseBodyErr) {
       console.warn(LOG_PREFIX, 'using fallback: failed to parse response body as JSON:', parseBodyErr);
-      return getFallbackAiResult(ruleBase, input.resultStyle);
+      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
     }
 
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       console.warn(LOG_PREFIX, 'using fallback: missing or empty choices[0].message.content');
-      return getFallbackAiResult(ruleBase, input.resultStyle);
+      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
     }
 
     const parsed = parseJson(content.trim());
     const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase, input.resultStyle);
     if (!evaluation) {
       console.warn(LOG_PREFIX, 'using fallback: evaluation JSON failed validation', { parsed });
-      return getFallbackAiResult(ruleBase, input.resultStyle);
+      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
     }
-    const enriched = enrichGuidanceContext(input, evaluation);
+    const localizedEval = localizeAiResultStrings(evaluation, input.outputLanguage);
+    const enriched = enrichGuidanceContext(input, localizedEval);
     const hadAvoidPrefs = Array.isArray(input.avoidPreferences) && input.avoidPreferences.length > 0;
     if (!hadAvoidPrefs) {
       return {
@@ -226,6 +239,6 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
     const message = err instanceof Error ? err.message : String(err);
     console.warn(LOG_PREFIX, 'caught error:', message, err);
     console.warn(LOG_PREFIX, 'using fallback after error');
-    return getFallbackAiResult(ruleBase, input.resultStyle);
+    return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
   }
 }

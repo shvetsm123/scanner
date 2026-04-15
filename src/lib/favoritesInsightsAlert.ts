@@ -1,11 +1,11 @@
 import { Alert } from 'react-native';
 
-const TITLE = 'Favorites are part of Unlimited';
-const MESSAGE = 'Save products you want to come back to with the Unlimited plan.';
+import { getAppLanguage, t } from './i18n';
 
 export function showFavoritesUnlimitedUpsell(onViewPlans: () => void) {
-  Alert.alert(TITLE, MESSAGE, [
-    { text: 'Close', style: 'cancel' },
-    { text: 'View plans', onPress: onViewPlans },
+  const lang = getAppLanguage();
+  Alert.alert(t('favUpsell.title', lang), t('favUpsell.msg', lang), [
+    { text: t('common.close', lang), style: 'cancel' },
+    { text: t('scanner.viewPlans', lang), onPress: onViewPlans },
   ]);
 }

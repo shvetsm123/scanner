@@ -1,6 +1,8 @@
 import { evaluateProductWithAi } from '../api/openai';
 import { getProductByBarcode } from '../api/openFoodFacts';
 import { buildAiInput } from './buildAiInput';
+import { getAppLanguage } from './deviceLanguage';
+import { t } from './i18n';
 import { computeRuleBasedBaseVerdict } from './productRules';
 import { buildScanAnalysisContextKey } from './scanAnalysisContext';
 import { getAvoidPreferences, getChildAge, getResultStyle } from './storage';
@@ -16,7 +18,7 @@ function newScanId(): string {
   return `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
-export function createFallbackRecentScan(barcode: string, _childAge: number | null = null): RecentScan {
+export function createFallbackRecentScan(barcode: string, _childAge: number | null = null, lang = getAppLanguage()): RecentScan {
   const code = barcode.trim();
   return {
     id: newScanId(),
@@ -29,22 +31,20 @@ export function createFallbackRecentScan(barcode: string, _childAge: number | nu
     allergensText: undefined,
     baseVerdict: 'unknown',
     verdict: 'unknown',
-    summary: 'For this age, no product match—try scanning again.',
-    reasons: ['No product page matched this barcode', 'Sugar and salt not available here', 'Scan again with a clearer barcode'],
-      nutritionSnapshot: [],
-      ingredientFlags: [],
-      guidanceContext: [],
-      ingredientBreakdown: [
-      'Without a matched product, we cannot summarize what the ingredient list looks like.',
-      'Try scanning again with a clearer view of the barcode so we can load real product text.',
-    ],
+    summary: t('unknown.summary', lang),
+    reasons: [t('unknown.r1', lang), t('unknown.r2', lang), t('unknown.r3', lang)],
+    nutritionSnapshot: [],
+    ingredientFlags: [],
+    guidanceContext: [],
+    ingredientBreakdown: [t('unknown.b1', lang), t('unknown.b2', lang)],
     allergyNotes: [],
-    parentTakeaway: 'Scan again when the barcode is readable.',
+    parentTakeaway: t('unknown.parent', lang),
     scannedAt: new Date().toISOString(),
   };
 }
 
 export async function buildRecentScanFromBarcode(barcode: string): Promise<BuildRecentScanOutcome> {
+  const lang = getAppLanguage();
   try {
     const [childAge, avoidPreferences, resultStyle] = await Promise.all([
       getChildAge(),
@@ -53,12 +53,12 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
     ]);
     const product = await getProductByBarcode(barcode);
     if (!product) {
-      return { scan: createFallbackRecentScan(barcode, childAge), isSuccessfulProductScan: false };
+      return { scan: createFallbackRecentScan(barcode, childAge, lang), isSuccessfulProductScan: false };
     }
 
     const age = typeof childAge === 'number' && Number.isFinite(childAge) ? childAge : 4;
     const ruleBasedBaseVerdict = computeRuleBasedBaseVerdict(age, product);
-    const aiInput = buildAiInput(childAge, product, avoidPreferences, resultStyle, ruleBasedBaseVerdict);
+    const aiInput = buildAiInput(childAge, product, avoidPreferences, resultStyle, ruleBasedBaseVerdict, lang);
     const ai = await evaluateProductWithAi(aiInput);
 
     const scan: RecentScan = {
@@ -94,6 +94,6 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
     return { scan, isSuccessfulProductScan: true };
   } catch {
     const childAge = await getChildAge();
-    return { scan: createFallbackRecentScan(barcode, childAge), isSuccessfulProductScan: false };
+    return { scan: createFallbackRecentScan(barcode, childAge, lang), isSuccessfulProductScan: false };
   }
 }

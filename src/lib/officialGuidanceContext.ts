@@ -1,5 +1,7 @@
 import type { RecentScan } from '../types/scan';
 import type { ResultStyle } from '../types/preferences';
+import type { AppLanguage } from './deviceLanguage';
+import { t } from './i18n';
 import { listingSuggestsAddedOrClearSweetening } from './productRules';
 import { parseChildAgeFromAnalysisContextKey } from './scanAnalysisContext';
 
@@ -58,6 +60,7 @@ export function buildOfficialGuidanceContextLines(
   childAge: number | null,
   nutriments: Record<string, number> | undefined,
   product: OfficialGuidanceProductFields,
+  lang: AppLanguage,
 ): string[] {
   const sugars =
     nutriments && typeof nutriments['sugars_100g'] === 'number' && Number.isFinite(nutriments['sugars_100g'])
@@ -73,7 +76,7 @@ export function buildOfficialGuidanceContextLines(
   if (childAge != null && childAge < 2) {
     const numericSweetEvidence = sugars != null && sugars >= 8;
     if (listingSweet || numericSweetEvidence) {
-      lines.push('For children under 2, added sugar is generally not recommended.');
+      lines.push(t('guidance.under2', lang));
     }
   }
 
@@ -83,11 +86,11 @@ export function buildOfficialGuidanceContextLines(
     if (cap != null && label != null) {
       const ratio = sugars / cap;
       if (ratio >= 0.85) {
-        lines.push(`For ages ${label}, this is close to a full day of typical free-sugar allowance (~${cap} g).`);
+        lines.push(t('guidance.nhs.close', lang, { label, cap: String(cap) }));
       } else if (ratio >= 0.45) {
-        lines.push(`For ages ${label}, this uses a noticeable share of the daily sugar allowance.`);
+        lines.push(t('guidance.nhs.noticeable', lang, { label }));
       } else if (ratio >= 0.22) {
-        lines.push(`For ages ${label}, this still uses a meaningful slice of the daily sugar allowance.`);
+        lines.push(t('guidance.nhs.meaningful', lang, { label }));
       }
     }
   }
@@ -96,32 +99,28 @@ export function buildOfficialGuidanceContextLines(
     const sugarKcal = sugars * 4;
     const pct = (sugarKcal / kcal) * 100;
     if (pct >= 18) {
-      lines.push(
-        'Sugars are a large share of the calories listed—many guidelines aim to keep free sugars under 10% of daily energy, ideally under 5%.',
-      );
+      lines.push(t('guidance.who.high', lang));
     } else if (pct >= 12) {
-      lines.push(
-        'Sugars are a sizable share of the calories listed—worth comparing to guidance that keeps free sugars under 10% of daily energy, ideally under 5%.',
-      );
+      lines.push(t('guidance.who.mid', lang));
     }
   }
 
   if (childAge != null && childAge <= 10) {
     const salt = saltGPer100g(nutriments);
     if (salt != null && salt >= 1.2) {
-      lines.push('This salt level is on the high side for a child snack.');
+      lines.push(t('guidance.salt', lang));
     }
   }
 
   return lines.slice(0, 3);
 }
 
-export function buildOfficialGuidanceContextLinesFromScan(scan: RecentScan): string[] {
+export function buildOfficialGuidanceContextLinesFromScan(scan: RecentScan, lang: AppLanguage): string[] {
   const childAge = parseChildAgeFromAnalysisContextKey(scan.analysisContextKey);
-  return buildOfficialGuidanceContextLines(childAge, scan.nutriments, scan);
+  return buildOfficialGuidanceContextLines(childAge, scan.nutriments, scan, lang);
 }
 
-export function resolvedGuidanceContextLines(mode: ResultStyle, scan: RecentScan): string[] {
+export function resolvedGuidanceContextLines(mode: ResultStyle, scan: RecentScan, lang: AppLanguage): string[] {
   if (mode !== 'advanced') {
     return [];
   }
@@ -129,5 +128,5 @@ export function resolvedGuidanceContextLines(mode: ResultStyle, scan: RecentScan
   if (fromScan.length > 0) {
     return fromScan.slice(0, 3);
   }
-  return buildOfficialGuidanceContextLinesFromScan(scan);
+  return buildOfficialGuidanceContextLinesFromScan(scan, lang);
 }

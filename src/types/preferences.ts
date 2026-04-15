@@ -74,7 +74,7 @@ export function labelForAvoidPreferenceId(id: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Replace known snake_case avoid tokens in AI copy with display labels. */
+/** @deprecated Use `humanizePreferenceMatchLine` from `src/lib/i18n` (localized). */
 export function humanizePreferenceMatchLine(line: string): string {
   let out = line;
   for (const id of AVOID_PREFERENCE_IDS) {

@@ -37,6 +37,10 @@ const NUTRIMENT_KEYS = [
   'sodium_100g',
   'saturated-fat_100g',
   'fat_100g',
+  'carbohydrates_100g',
+  'proteins_100g',
+  'fiber_100g',
+  'fibre_100g',
   'energy-kcal_100g',
   'energy_100g',
 ] as const;

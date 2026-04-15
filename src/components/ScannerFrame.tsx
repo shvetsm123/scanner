@@ -1,6 +1,9 @@
 import { Text, View } from 'react-native';
 
+import { getAppLanguage, t } from '../lib/i18n';
+
 export function ScannerFrame() {
+  const lang = getAppLanguage();
   return (
     <View
       pointerEvents="none"
@@ -35,7 +38,7 @@ export function ScannerFrame() {
           textShadowOffset: { width: 0, height: 1 },
         }}
       >
-        Point at a product barcode
+        {t('frame.pointBarcode', lang)}
       </Text>
     </View>
   );
