@@ -9,12 +9,14 @@ export type AiResult = {
   /** Shown verdict after preference conflicts; never more lenient than baseVerdict. */
   verdict: Verdict;
   summary: string;
-  /** 3–5 entries for quick scans, 5–8 for advanced (see normalizeCanonicalAiPayload). */
+  /** Factual bullets (see normalizeCanonicalAiPayload). */
   reasons: string[];
   preferenceMatches: string[];
-  /** 2–4 composition paragraphs (facts from product fields only). */
+  /** Legacy model field; UI uses OFF-only ingredient tab. */
   ingredientBreakdown: string[];
   allergyNotes: string[];
+  /** Short framing: why the verdict matters for this age (no repeated nutrition numbers from bullets). */
+  whyThisMatters: string;
   parentTakeaway: string;
   /** Per-100g (or per-100ml) facts only; omit unknowns. */
   nutritionSnapshot: string[];
@@ -22,6 +24,20 @@ export type AiResult = {
   ingredientFlags: string[];
   /** Advanced "official context" lines; empty for quick scans. */
   guidanceContext: string[];
+};
+
+/** Second OpenAI call: only cleaned OFF ingredient tokens + classification context. */
+export type IngredientsAiInput = {
+  /** Device / app UI language — all model output names and notes must match this only. */
+  outputLanguage: AppLanguage;
+  /** BCP-47 locale from the device when available (e.g. ru-RU, uk-UA). */
+  localeHint?: string;
+  childAge: number;
+  avoidPreferenceIds: AvoidPreference[];
+  cleanedIngredientLines: string[];
+  additivesTags: string[];
+  allergensDeclared: string[];
+  traceDeclared: string[];
 };
 
 export type KidsAiInput = {

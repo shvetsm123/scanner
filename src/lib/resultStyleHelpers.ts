@@ -59,29 +59,33 @@ function parseBoundedStringList(raw: unknown, maxItems: number, maxItemLen: numb
   return out;
 }
 
-function capIngredientBreakdownParagraphs(parts: string[]): string[] | null {
-  if (parts.length < 2) {
-    return null;
+function capIngredientBreakdownParagraphs(parts: string[]): string[] {
+  if (parts.length === 0) {
+    return [];
   }
   return parts.length > 4 ? parts.slice(0, 4) : parts;
 }
 
-function parseIngredientBreakdownParagraphs(raw: unknown, minParaLen: number): string[] | null {
+function parseIngredientBreakdownParagraphs(raw: unknown, minParaLen: number): string[] {
   if (raw == null) {
-    return null;
+    return [];
   }
   if (typeof raw === 'string') {
-    const parts = raw
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return [];
+    }
+    const parts = trimmed
       .split(/\n\n+/)
       .map((p) => p.trim())
       .filter((p) => p.length >= minParaLen);
     return capIngredientBreakdownParagraphs(parts);
   }
-  if (Array.isArray(raw) && raw.length > 0 && raw.every((x) => typeof x === 'string')) {
+  if (Array.isArray(raw) && raw.every((x) => typeof x === 'string')) {
     const parts = (raw as string[]).map((s) => s.trim()).filter((s) => s.length >= minParaLen);
     return capIngredientBreakdownParagraphs(parts);
   }
-  return null;
+  return [];
 }
 
 function parseAllergyNotesList(raw: unknown): string[] {
@@ -238,7 +242,7 @@ export function resolvedNutritionSnapshotLinesForMode(
 export function normalizeCanonicalAiPayload(
   raw: unknown,
   ruleBasedBaseVerdict: Verdict,
-  resultStyle: ResultStyle,
+  _resultStyle: ResultStyle,
 ): AiResult | null {
   if (!raw || typeof raw !== 'object') {
     return null;
@@ -254,14 +258,14 @@ export function normalizeCanonicalAiPayload(
   if (typeof o.summary !== 'string' || !o.summary.trim()) {
     return null;
   }
-  const advanced = resultStyle === 'advanced';
-  const minReasons = advanced ? 5 : 3;
-  const maxReasons = advanced ? 8 : 5;
+  const advanced = true;
+  const minReasons = 4;
+  const maxReasons = 6;
   if (!Array.isArray(o.reasons) || o.reasons.length < minReasons || o.reasons.length > maxReasons) {
     return null;
   }
   const reasons = o.reasons.map((r) => (typeof r === 'string' ? r.trim() : ''));
-  const reasonMaxLen = advanced ? 180 : 160;
+  const reasonMaxLen = 200;
   if (reasons.some((r) => r.length < 8 || r.length > reasonMaxLen)) {
     return null;
   }
@@ -272,16 +276,16 @@ export function normalizeCanonicalAiPayload(
     return null;
   }
 
-  const nutritionSnapshot = parseBoundedStringList(
-    o.nutritionSnapshot,
-    advanced ? 14 : 6,
-    100,
-  );
-  const ingredientFlags = parseBoundedStringList(o.ingredientFlags, advanced ? 18 : 8, 120);
+  const nutritionSnapshot = parseBoundedStringList(o.nutritionSnapshot, 14, 100);
+  const ingredientFlags = parseBoundedStringList(o.ingredientFlags, 18, 120);
 
-  const minPara = advanced ? 32 : 20;
+  const minPara = 16;
   const ingredientBreakdown = parseIngredientBreakdownParagraphs(o.ingredientBreakdown ?? o.ingredientNotes, minPara);
-  if (!ingredientBreakdown) {
+
+  const whyRaw = o.whyThisMatters ?? o.whyText;
+  const whyThisMatters =
+    typeof whyRaw === 'string' && whyRaw.trim().length >= 12 && whyRaw.trim().length <= 320 ? whyRaw.trim() : undefined;
+  if (!whyThisMatters) {
     return null;
   }
 
@@ -310,6 +314,7 @@ export function normalizeCanonicalAiPayload(
     ingredientFlags,
     ingredientBreakdown,
     allergyNotes,
+    whyThisMatters,
     parentTakeaway,
     guidanceContext,
   };

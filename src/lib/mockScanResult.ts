@@ -1,11 +1,14 @@
-import { evaluateProductWithAi } from '../api/openai';
+import * as Localization from 'expo-localization';
+
+import { evaluateIngredientsWithAi, evaluateProductWithAi } from '../api/openai';
 import { getProductByBarcode } from '../api/openFoodFacts';
 import { buildAiInput } from './buildAiInput';
 import { getAppLanguage } from './deviceLanguage';
 import { t } from './i18n';
+import { extractCleanOffComposition } from './offCompositionClean';
 import { computeRuleBasedBaseVerdict } from './productRules';
 import { buildScanAnalysisContextKey } from './scanAnalysisContext';
-import { getAvoidPreferences, getChildAge, getResultStyle } from './storage';
+import { getAvoidPreferences, getChildAge } from './storage';
 import type { RecentScan } from '../types/scan';
 
 export type BuildRecentScanOutcome = {
@@ -32,12 +35,13 @@ export function createFallbackRecentScan(barcode: string, _childAge: number | nu
     baseVerdict: 'unknown',
     verdict: 'unknown',
     summary: t('unknown.summary', lang),
-    reasons: [t('unknown.r1', lang), t('unknown.r2', lang), t('unknown.r3', lang)],
+    reasons: [t('unknown.r1', lang), t('unknown.r2', lang), t('unknown.r3', lang), t('unknown.r4', lang)],
     nutritionSnapshot: [],
     ingredientFlags: [],
     guidanceContext: [],
-    ingredientBreakdown: [t('unknown.b1', lang), t('unknown.b2', lang)],
+    ingredientBreakdown: [],
     allergyNotes: [],
+    whyThisMatters: t('unknown.why', lang),
     parentTakeaway: t('unknown.parent', lang),
     scannedAt: new Date().toISOString(),
   };
@@ -46,11 +50,7 @@ export function createFallbackRecentScan(barcode: string, _childAge: number | nu
 export async function buildRecentScanFromBarcode(barcode: string): Promise<BuildRecentScanOutcome> {
   const lang = getAppLanguage();
   try {
-    const [childAge, avoidPreferences, resultStyle] = await Promise.all([
-      getChildAge(),
-      getAvoidPreferences(),
-      getResultStyle(),
-    ]);
+    const [childAge, avoidPreferences] = await Promise.all([getChildAge(), getAvoidPreferences()]);
     const product = await getProductByBarcode(barcode);
     if (!product) {
       return { scan: createFallbackRecentScan(barcode, childAge, lang), isSuccessfulProductScan: false };
@@ -58,8 +58,47 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
 
     const age = typeof childAge === 'number' && Number.isFinite(childAge) ? childAge : 4;
     const ruleBasedBaseVerdict = computeRuleBasedBaseVerdict(age, product);
-    const aiInput = buildAiInput(childAge, product, avoidPreferences, resultStyle, ruleBasedBaseVerdict, lang);
+    const aiInput = buildAiInput(childAge, product, avoidPreferences, 'advanced', ruleBasedBaseVerdict, lang);
     const ai = await evaluateProductWithAi(aiInput);
+
+    const cleaned = extractCleanOffComposition(product.rawJson, product.ingredientsText, product.productName);
+    let ingredientPanel = undefined as RecentScan['ingredientPanel'];
+    if (cleaned.ingredientLines.length > 0) {
+      const localeHint = Localization.getLocales()?.[0]?.languageTag ?? lang;
+      console.warn('[IngredientsPipeline]', 'OFF → second AI', {
+        rawCount: cleaned.rawLineCount,
+        cleanedCountBeforeAggressiveFilter: cleaned.cleanedCountBeforeAggressiveFilter,
+        cleanedCountAfterAggressiveFilter: cleaned.cleanedCountAfterAggressiveFilter,
+        cleanedCandidateCount: cleaned.ingredientLines.length,
+        cleanedCandidates: cleaned.ingredientLines,
+      });
+      console.warn('[IngredientsPipeline]', 'deviceAppLanguage for Ingredients second AI', {
+        outputLanguage: lang,
+        localeHint,
+      });
+      const panel = await evaluateIngredientsWithAi({
+        outputLanguage: lang,
+        localeHint,
+        childAge: age,
+        avoidPreferenceIds: avoidPreferences,
+        cleanedIngredientLines: cleaned.ingredientLines,
+        additivesTags: cleaned.additivesTags,
+        allergensDeclared: cleaned.allergens,
+        traceDeclared: cleaned.traces,
+      });
+      if (panel) {
+        ingredientPanel = panel;
+        console.warn('[IngredientsPipeline]', 'renderer will use structured AI output', {
+          good: panel.good.length,
+          neutral: panel.neutral.length,
+          redFlags: panel.redFlags.length,
+        });
+      } else {
+        console.warn('[IngredientsPipeline]', 'renderer will use fallback (second AI missing or validation failed)');
+      }
+    } else {
+      console.warn('[IngredientsPipeline]', 'no cleaned lines — skip second AI');
+    }
 
     const scan: RecentScan = {
       id: newScanId(),
@@ -80,16 +119,19 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
       ingredientBreakdown: ai.ingredientBreakdown,
       allergyNotes: ai.allergyNotes,
       parentTakeaway: ai.parentTakeaway,
+      whyThisMatters: ai.whyThisMatters,
+      whyText: ai.whyThisMatters,
       nutritionSnapshot: ai.nutritionSnapshot,
       ingredientFlags: ai.ingredientFlags,
       guidanceContext: ai.guidanceContext,
+      ingredientPanel,
     };
 
     if (avoidPreferences.length > 0 && ai.preferenceMatches.length > 0) {
       scan.preferenceMatches = ai.preferenceMatches;
     }
 
-    scan.analysisContextKey = buildScanAnalysisContextKey(scan.barcode, childAge, resultStyle, avoidPreferences);
+    scan.analysisContextKey = buildScanAnalysisContextKey(scan.barcode, childAge, avoidPreferences);
 
     return { scan, isSuccessfulProductScan: true };
   } catch {

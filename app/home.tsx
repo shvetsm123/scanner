@@ -32,11 +32,8 @@ import {
   getDailySuccessfulScanState,
   getPlan,
   getRecentScans,
-  getResultStyle,
   incrementSuccessfulScanCountIfNeeded,
-  pushSupabasePreferencesFromLocal,
   resetAppDataForDev,
-  setResultStyle,
   syncRemotePreferencesWithLocal,
   tryPersistSuccessfulScanToSupabase,
 } from '../src/lib/storage';
@@ -50,7 +47,7 @@ import {
   removeFavorite,
 } from '../src/api/supabase';
 import type { FavoriteListItem } from '../src/types/ai';
-import type { AvoidPreference, Plan, ResultStyle } from '../src/types/preferences';
+import type { AvoidPreference, Plan } from '../src/types/preferences';
 import type { RecentScan } from '../src/types/scan';
 
 function recentScanFromFavoriteItem(item: FavoriteListItem, recent: RecentScan[]): RecentScan {
@@ -68,12 +65,18 @@ function recentScanFromFavoriteItem(item: FavoriteListItem, recent: RecentScan[]
     baseVerdict: 'unknown',
     verdict: 'unknown',
     summary: t('home.favorite.summary', lang),
-    reasons: [t('home.favorite.r1', lang), t('home.favorite.r2', lang), t('home.favorite.r3', lang)],
+    reasons: [
+      t('home.favorite.r1', lang),
+      t('home.favorite.r2', lang),
+      t('home.favorite.r3', lang),
+      t('home.favorite.r4', lang),
+    ],
     scannedAt: new Date().toISOString(),
     nutritionSnapshot: [],
     ingredientFlags: [],
-    ingredientBreakdown: [t('home.favorite.b1', lang), t('home.favorite.b2', lang)],
+    ingredientBreakdown: [],
     allergyNotes: [],
+    whyThisMatters: t('home.favorite.why', lang),
     parentTakeaway: t('home.favorite.parent', lang),
   };
 }
@@ -136,8 +139,8 @@ export default function HomeScreen() {
   const [scanError, setScanError] = useState<{ title: string; message: string } | null>(null);
   const [plan, setPlan] = useState<Plan>('free');
   const [dailyScanState, setDailyScanState] = useState({ dateKey: '', count: 0 });
-  const [resultStyle, setResultStyle] = useState<ResultStyle>('quick');
   const [avoidPreferences, setAvoidPreferences] = useState<AvoidPreference[]>([]);
+  const [childAge, setChildAge] = useState<number | null>(null);
   const isProcessingScanRef = useRef(false);
   const resultModalVisibleRef = useRef(false);
   const scanPipelineLoadingRef = useRef(false);
@@ -169,9 +172,8 @@ export default function HomeScreen() {
       expectingScannerDismissHandoffRef.current = false;
 
       const reveal = async () => {
-        const [freshPlan, freshStyle] = await Promise.all([getPlan(), getResultStyle()]);
+        const freshPlan = await getPlan();
         setPlan(freshPlan);
-        setResultStyle(freshStyle);
         if (snapshot.kind === 'known') {
           setRecentScans(snapshot.nextScans);
           if (snapshot.daily) {
@@ -279,24 +281,23 @@ export default function HomeScreen() {
 
   const hydrate = useCallback(async () => {
     await syncRemotePreferencesWithLocal();
-    const [scans, avoids, daily] = await Promise.all([
+    const [scans, avoids, daily, age] = await Promise.all([
       getRecentScans(),
       getAvoidPreferences(),
       getDailySuccessfulScanState(),
+      getChildAge(),
     ]);
     const p = await getPlan();
-    const style = await getResultStyle();
     console.warn('[planDebug][home] hydrate', {
       plan: p,
-      resultStyle: style,
       avoids,
       daily,
     });
     setRecentScans(scans);
     setPlan(p);
-    setResultStyle(style);
     setAvoidPreferences(avoids);
     setDailyScanState(daily);
+    setChildAge(typeof age === 'number' && Number.isFinite(age) ? age : null);
     if (p === 'unlimited') {
       await refreshFavoritesList();
     } else {
@@ -433,14 +434,6 @@ export default function HomeScreen() {
     }
   };
 
-  const onModalSelectInfoLevel = useCallback((level: ResultStyle) => {
-    void (async () => {
-      await setResultStyle(level);
-      setResultStyle(level);
-      void pushSupabasePreferencesFromLocal();
-    })();
-  }, []);
-
   const promptFavoritesUnlimitedUpsell = () => {
     showFavoritesUnlimitedUpsell(() => {
       navigatePaywall({
@@ -505,14 +498,13 @@ export default function HomeScreen() {
     }
 
     try {
-      const [childAge, avoids, style, freshRecent] = await Promise.all([
+      const [childAge, avoids, freshRecent] = await Promise.all([
         getChildAge(),
         getAvoidPreferences(),
-        getResultStyle(),
         getRecentScans(),
       ]);
       const normBarcode = data.trim();
-      const contextKey = buildScanAnalysisContextKey(normBarcode, childAge, style, avoids);
+      const contextKey = buildScanAnalysisContextKey(normBarcode, childAge, avoids);
       const reusable = findRecentScanForReuse(freshRecent, normBarcode, contextKey);
 
       if (reusable) {
@@ -670,9 +662,8 @@ export default function HomeScreen() {
     scanPipelineLoadingRef.current = false;
     setScannerModalVisible(false);
     setModalScan(null);
-    const [freshPlan, freshStyle] = await Promise.all([getPlan(), getResultStyle()]);
+    const freshPlan = await getPlan();
     setPlan(freshPlan);
-    setResultStyle(freshStyle);
     setActiveModalScanId(scanId);
     setResultReuseBanner(null);
     setResultModalVisible(true);
@@ -688,9 +679,8 @@ export default function HomeScreen() {
     scanPipelineLoadingRef.current = false;
     setScannerModalVisible(false);
     setActiveModalScanId(null);
-    const [freshPlan, freshStyle] = await Promise.all([getPlan(), getResultStyle()]);
+    const freshPlan = await getPlan();
     setPlan(freshPlan);
-    setResultStyle(freshStyle);
     setModalScan(scan);
     setResultReuseBanner(null);
     setResultModalVisible(true);
@@ -1196,7 +1186,7 @@ export default function HomeScreen() {
           visible
           key={scanForResultModal.id}
           scan={scanForResultModal}
-          resultStyle={resultStyle}
+          childAge={childAge}
           plan={plan}
           avoidPreferences={avoidPreferences}
           isFavorited={modalFavorited}
@@ -1205,7 +1195,6 @@ export default function HomeScreen() {
           onClose={onCloseModal}
           onScanAgain={onScanAgain}
           onOpenPaywall={() => navigatePaywall({ preselect: 'unlimited', closeResultModalFirst: true })}
-          onSelectInfoLevel={onModalSelectInfoLevel}
           reuseNotice={resultReuseBanner}
         />
       ) : null}

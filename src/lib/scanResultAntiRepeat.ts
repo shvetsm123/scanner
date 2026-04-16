@@ -117,8 +117,8 @@ export function selectDistinctDisplayReasons(params: {
   nutritionLines: string[];
 }): string[] {
   const { mode, summary, preferenceLines, avoidPreferenceIds, reasons, nutritionLines } = params;
-  const maxCap = mode === 'advanced' ? 8 : 5;
-  const minCap = mode === 'advanced' ? 5 : 3;
+  const maxCap = mode === 'advanced' ? 6 : 5;
+  const minCap = 4;
   const raw = reasons.map((r) => (typeof r === 'string' ? r.trim() : '')).filter(Boolean);
 
   const sugarCovered =

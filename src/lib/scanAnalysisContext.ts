@@ -1,16 +1,15 @@
-import type { AvoidPreference, ResultStyle } from '../types/preferences';
+import type { AvoidPreference } from '../types/preferences';
 import type { RecentScan } from '../types/scan';
 
 export function buildScanAnalysisContextKey(
   barcode: string,
   childAge: number | null,
-  resultStyle: ResultStyle,
   avoidPreferences: AvoidPreference[],
 ): string {
   const b = barcode.trim();
   const age = childAge == null || !Number.isFinite(childAge) ? 'na' : String(Math.round(childAge));
   const sorted = [...avoidPreferences].slice().sort().join(',');
-  return `${b}::${age}::${resultStyle}::${sorted}`;
+  return `${b}::${age}::${sorted}`;
 }
 
 /** Reads the rounded child age embedded in `analysisContextKey`, if present. */

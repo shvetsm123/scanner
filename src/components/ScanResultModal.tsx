@@ -1,20 +1,68 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
+import { formatIngredientNameForLang, polishIngredientNote } from '../lib/ingredientDisplay';
 import { getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
 import { localizeResultLine } from '../lib/localizeScanText';
-import type { AvoidPreference, Plan, ResultStyle } from '../types/preferences';
+import type { AvoidPreference, Plan } from '../types/preferences';
 import type { RecentScan } from '../types/scan';
 import { selectDistinctDisplayReasons } from '../lib/scanResultAntiRepeat';
-import { resolvedGuidanceContextLines } from '../lib/officialGuidanceContext';
-import { resolveUiResultStyle, resolvedNutritionSnapshotLinesForMode } from '../lib/resultStyleHelpers';
 import { VerdictBadge } from './VerdictBadge';
+type ResultTab = 'general' | 'ingredients';
+
+type RowUi = { key: string; name: string; note: string };
+
+function IngredientSection({
+  title,
+  rows,
+  accent,
+  isFirst,
+}: {
+  title: string;
+  rows: RowUi[];
+  accent: string;
+  isFirst: boolean;
+}) {
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <View style={{ marginTop: isFirst ? 14 : 24 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 }}>
+        <View style={{ width: 3, height: 17, borderRadius: 2, backgroundColor: accent }} />
+        <Text style={{ fontSize: 15, fontWeight: '800', color: '#2A241C', letterSpacing: 0.2 }}>{title}</Text>
+      </View>
+      <View
+        style={{
+          backgroundColor: '#F4EFE6',
+          borderRadius: 16,
+          paddingVertical: 15,
+          paddingHorizontal: 14,
+          borderWidth: 1,
+          borderColor: '#E4D9CC',
+          borderLeftWidth: 3,
+          borderLeftColor: accent,
+        }}
+      >
+        <View style={{ gap: 18 }}>
+          {rows.map((row) => (
+            <View key={row.key}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#1F1A16', letterSpacing: 0.15 }}>{row.name}</Text>
+              <Text style={{ marginTop: 7, fontSize: 13, lineHeight: 20, color: '#6A5F52' }}>{row.note}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 type ScanResultModalProps = {
   visible: boolean;
   scan: RecentScan | null;
-  resultStyle: ResultStyle;
+  childAge?: number | null;
   plan: Plan;
   avoidPreferences: AvoidPreference[];
   isFavorited: boolean;
@@ -23,14 +71,13 @@ type ScanResultModalProps = {
   onClose: () => void;
   onScanAgain: () => void;
   onOpenPaywall: () => void;
-  onSelectInfoLevel?: (level: ResultStyle) => void;
   reuseNotice?: string | null;
 };
 
 export function ScanResultModal({
   visible,
   scan,
-  resultStyle,
+  childAge = null,
   plan,
   avoidPreferences,
   isFavorited,
@@ -39,47 +86,85 @@ export function ScanResultModal({
   onClose,
   onScanAgain,
   onOpenPaywall: _onOpenPaywall,
-  onSelectInfoLevel,
   reuseNotice,
 }: ScanResultModalProps) {
   const lang = getAppLanguage();
-  const mode: ResultStyle = resolveUiResultStyle(plan, resultStyle);
-  console.warn('[planDebug][resultModal] render', {
-    plan,
-    resultStyleProp: resultStyle,
-    effectiveMode: mode,
-    scanId: scan?.id,
-    verdict: scan?.verdict,
-  });
+  const [tab, setTab] = useState<ResultTab>('general');
+
+  useEffect(() => {
+    setTab('general');
+  }, [scan?.id]);
+
   const preferenceLines = scan?.preferenceMatches?.filter(Boolean) ?? [];
-  const showAvoidSection = avoidPreferences.length > 0 && preferenceLines.length > 0;
-  const nutritionLines = scan
-    ? resolvedNutritionSnapshotLinesForMode(mode, scan.nutritionSnapshot, scan.nutriments, lang)
-    : [];
-  const flagLines = scan?.ingredientFlags?.filter((p) => typeof p === 'string' && p.trim()) ?? [];
+  const showAvoidSection = preferenceLines.length > 0;
   const locLine = (s: string) => localizeResultLine(s, lang);
   const displayReasons = scan
     ? selectDistinctDisplayReasons({
-        mode,
+        mode: 'advanced',
         summary: scan.summary ?? '',
         preferenceLines,
         avoidPreferenceIds: avoidPreferences,
         reasons: scan.reasons ?? [],
-        nutritionLines,
+        nutritionLines: [],
       }).map(locLine)
     : [];
-  const guidanceLines = scan ? resolvedGuidanceContextLines(mode, scan, lang).map(locLine) : [];
-  const ingredientParagraphs = (
-    scan?.ingredientBreakdown?.filter((p) => typeof p === 'string' && p.trim()) ?? []
-  )
-    .slice(0, 4)
-    .map(locLine);
-  const allergyLines = (scan?.allergyNotes?.filter((p) => typeof p === 'string' && p.trim()) ?? []).map(locLine);
+
+  const whyText = scan ? locLine(String(scan.whyThisMatters ?? scan.whyText ?? '').trim()) : '';
+  const parentText = scan?.parentTakeaway ? locLine(scan.parentTakeaway) : '';
+
+  const ingredientPack = useMemo(() => {
+    if (!scan) {
+      return { kind: 'fallback' as const };
+    }
+    if (!scan.ingredientPanel) {
+      console.warn('[IngredientsPanel][render]', 'mode=fallback (no valid ingredientPanel on scan)');
+      return { kind: 'fallback' as const };
+    }
+    const { good, neutral, redFlags } = scan.ingredientPanel;
+    const toRows = (arr: { name: string; note: string }[], prefix: string): RowUi[] =>
+      arr.map((e, i) => ({
+        key: `${prefix}-${i}`,
+        name: formatIngredientNameForLang(e.name, lang),
+        note: polishIngredientNote(e.note, lang),
+      }));
+    console.warn('[IngredientsPanel][render]', 'mode=structured-ai');
+    return {
+      kind: 'structured' as const,
+      good: toRows(good, 'g'),
+      neutral: toRows(neutral, 'n'),
+      red: toRows(redFlags, 'r'),
+    };
+  }, [scan, lang]);
+
   const favoriteDisabled = favoriteLoading || !scan;
   const isUnknownNotFound =
     scan != null &&
     scan.verdict === 'unknown' &&
     String(scan.productName ?? '').trim() === 'Unknown product';
+
+  const tabBtn = (id: ResultTab, label: string) => (
+    <Pressable
+      key={id}
+      onPress={() => setTab(id)}
+      style={{
+        flex: 1,
+        paddingVertical: 10,
+        borderRadius: 11,
+        backgroundColor: tab === id ? '#FFFDF8' : 'transparent',
+      }}
+    >
+      <Text
+        style={{
+          textAlign: 'center',
+          fontSize: 13,
+          fontWeight: '700',
+          color: tab === id ? '#1F1A16' : '#7A6E61',
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
 
   return (
     <Modal
@@ -167,7 +252,7 @@ export function ScanResultModal({
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>{t('common.tryAgain', lang)}</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFDF9' }}>{t('result.scanAgain', lang)}</Text>
                   </Pressable>
                 </View>
               </>
@@ -251,194 +336,147 @@ export function ScanResultModal({
                   {t('result.barcodeLabel', lang)} {scan?.barcode ?? '-'}
                 </Text>
 
-                {scan ? (
-                  <View style={{ marginTop: 12 }}>
-                    <VerdictBadge verdict={scan.verdict} />
-                  </View>
-                ) : null}
+                <View
+                  style={{
+                    marginTop: 14,
+                    flexDirection: 'row',
+                    backgroundColor: '#EDE6DD',
+                    borderRadius: 14,
+                    padding: 3,
+                    borderWidth: 1,
+                    borderColor: '#E4D9CC',
+                  }}
+                >
+                  {tabBtn('general', t('result.tab.general', lang))}
+                  {tabBtn('ingredients', t('result.tab.ingredients', lang))}
+                </View>
 
-                <Text style={{ marginTop: 10, fontSize: 15, lineHeight: 22, color: '#4F453B' }}>
-                  {scan?.summary ? locLine(scan.summary) : ''}
-                </Text>
+                {tab === 'general' ? (
+                  <>
+                    {scan ? (
+                      <View style={{ marginTop: 12 }}>
+                        <VerdictBadge verdict={scan.verdict} />
+                      </View>
+                    ) : null}
 
-                {scan ? (
-                  <View
-                    style={{
-                      marginTop: 12,
-                      alignSelf: 'stretch',
-                      flexDirection: 'row',
-                      backgroundColor: '#EDE6DD',
-                      borderRadius: 14,
-                      padding: 3,
-                      borderWidth: 1,
-                      borderColor: '#E4D9CC',
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => {
-                        if (resultStyle !== 'quick') {
-                          onSelectInfoLevel?.('quick');
-                        }
-                      }}
-                      style={{
-                        flex: 1,
-                        paddingVertical: 9,
-                        borderRadius: 11,
-                        backgroundColor: mode === 'quick' ? '#FFFDF8' : 'transparent',
-                      }}
-                    >
-                      <Text
+                    <Text style={{ marginTop: 10, fontSize: 15, lineHeight: 22, color: '#4F453B' }}>
+                      {scan?.summary ? locLine(scan.summary) : ''}
+                    </Text>
+
+                    {showAvoidSection ? (
+                      <View
                         style={{
-                          textAlign: 'center',
-                          fontSize: 13,
-                          fontWeight: '700',
-                          color: mode === 'quick' ? '#1F1A16' : '#7A6E61',
+                          marginTop: 10,
+                          paddingVertical: 14,
+                          paddingHorizontal: 14,
+                          borderRadius: 14,
+                          backgroundColor: '#F7EFE3',
+                          borderWidth: 1,
+                          borderColor: '#E2D0B8',
+                          borderLeftWidth: 4,
+                          borderLeftColor: '#C9A06E',
+                          gap: 8,
                         }}
                       >
-                        {t('result.lessInfo', lang)}
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: '#4A3828', letterSpacing: 0.2 }}>
+                          {t('result.matchesAvoid', lang)}
+                        </Text>
+                        {preferenceLines.map((line, index) => (
+                          <Text
+                            key={`${line}-${index}`}
+                            style={{ fontSize: 14, color: '#5C4A38', lineHeight: 20, fontWeight: '600' }}
+                          >
+                            • {locLine(humanizePreferenceMatchLine(line, lang))}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    <View style={{ marginTop: showAvoidSection ? 12 : 14, gap: 8 }}>
+                      {displayReasons.map((reason, index) => (
+                        <Text key={`${reason}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
+                          • {reason}
+                        </Text>
+                      ))}
+                    </View>
+
+                    {whyText ? (
+                      <View style={{ marginTop: 16 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.whyMatters', lang)}</Text>
+                        <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{whyText}</Text>
+                      </View>
+                    ) : null}
+
+                    {parentText ? (
+                      <View style={{ marginTop: 16 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>{t('result.parentTakeaway', lang)}</Text>
+                        <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{parentText}</Text>
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <View style={{ marginTop: 14, paddingBottom: 6 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: '#1F1A16', marginBottom: 2 }}>
+                      {t('result.ingredients.heading', lang)}
+                    </Text>
+                    {ingredientPack.kind === 'fallback' ? (
+                      <Text style={{ marginTop: 12, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>
+                        {t('result.ingredients.failBreakdown', lang)}
                       </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        if (resultStyle !== 'advanced') {
-                          onSelectInfoLevel?.('advanced');
-                        }
-                      }}
-                      style={{
-                        flex: 1,
-                        paddingVertical: 9,
-                        borderRadius: 11,
-                        backgroundColor: mode === 'advanced' ? '#FFFDF8' : 'transparent',
-                      }}
-                    >
-                      <Text
+                    ) : (
+                      <>
+                        <IngredientSection
+                          title={t('result.ingredients.good', lang)}
+                          rows={ingredientPack.good}
+                          accent="#2F6F4B"
+                          isFirst
+                        />
+                        <IngredientSection
+                          title={t('result.ingredients.neutral', lang)}
+                          rows={ingredientPack.neutral}
+                          accent="#6B5C4A"
+                          isFirst={ingredientPack.good.length === 0}
+                        />
+                        <IngredientSection
+                          title={t('result.ingredients.red', lang)}
+                          rows={ingredientPack.red}
+                          accent="#8B3A3A"
+                          isFirst={ingredientPack.good.length === 0 && ingredientPack.neutral.length === 0}
+                        />
+                      </>
+                    )}
+                    {ingredientPack.kind === 'structured' && scan?.allergensText?.trim() ? (
+                      <View
                         style={{
-                          textAlign: 'center',
-                          fontSize: 13,
-                          fontWeight: '700',
-                          color: mode === 'advanced' ? '#1F1A16' : '#7A6E61',
+                          marginTop: 16,
+                          paddingTop: 14,
+                          borderTopWidth: 1,
+                          borderTopColor: '#E8DFD4',
                         }}
                       >
-                        {t('result.moreInfo', lang)}
-                      </Text>
-                    </Pressable>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B5C4A' }}>
+                          {t('ing.footer.allergens', lang)}
+                        </Text>
+                        <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 19, color: '#5D5246' }}>
+                          {scan.allergensText.trim()}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {ingredientPack.kind === 'structured' &&
+                    scan?.rawJson &&
+                    typeof scan.rawJson.traces === 'string' &&
+                    scan.rawJson.traces.trim() ? (
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B5C4A' }}>
+                          {t('ing.footer.traces', lang)}
+                        </Text>
+                        <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 19, color: '#5D5246' }}>
+                          {String(scan.rawJson.traces).trim()}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
-                ) : null}
-
-                {showAvoidSection ? (
-                  <View
-                    style={{
-                      marginTop: 12,
-                      paddingVertical: 14,
-                      paddingHorizontal: 14,
-                      borderRadius: 14,
-                      backgroundColor: '#F7EFE3',
-                      borderWidth: 1,
-                      borderColor: '#E2D0B8',
-                      borderLeftWidth: 4,
-                      borderLeftColor: '#C9A06E',
-                      gap: 8,
-                    }}
-                  >
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#4A3828', letterSpacing: 0.2 }}>
-                      {t('result.matchesAvoid', lang)}
-                    </Text>
-                    {preferenceLines.map((line, index) => (
-                      <Text
-                        key={`${line}-${index}`}
-                        style={{ fontSize: 14, color: '#5C4A38', lineHeight: 20, fontWeight: '600' }}
-                      >
-                        • {locLine(humanizePreferenceMatchLine(line, lang))}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-
-            <View style={{ marginTop: 14, gap: 8 }}>
-              {displayReasons.map((reason, index) => (
-                <Text key={`${reason}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
-                  • {reason}
-                </Text>
-              ))}
-            </View>
-
-            {mode === 'advanced' && guidanceLines.length > 0 ? (
-              <View style={{ marginTop: 16 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.officialGuidance', lang)}</Text>
-                <View style={{ marginTop: 8, gap: 8 }}>
-                  {guidanceLines.map((line, index) => (
-                    <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
-                      • {line}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {mode === 'advanced' && nutritionLines.length > 0 ? (
-              <View style={{ marginTop: 18 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.nutrition', lang)}</Text>
-                <View style={{ marginTop: 10, gap: 8 }}>
-                  {nutritionLines.map((line, index) => (
-                    <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
-                      • {line}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {mode === 'advanced' && flagLines.length > 0 ? (
-              <View style={{ marginTop: 18 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.ingredientFlags', lang)}</Text>
-                <View style={{ marginTop: 10, gap: 8 }}>
-                  {flagLines.map((line, index) => (
-                    <Text key={`${line}-${index}`} style={{ fontSize: 14, color: '#5D5246', lineHeight: 20 }}>
-                      • {locLine(line)}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {mode === 'advanced' && ingredientParagraphs.length > 0 ? (
-              <View
-                style={{
-                  marginTop: 18,
-                  paddingTop: 16,
-                  borderTopWidth: 1,
-                  borderTopColor: '#E8DFD4',
-                }}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B5C4A' }}>{t('result.ingredientBreakdown', lang)}</Text>
-                <View style={{ marginTop: 10, gap: 14 }}>
-                  {ingredientParagraphs.map((para, index) => (
-                    <Text
-                      key={`${index}-${para.slice(0, 24)}`}
-                      style={{ fontSize: 15, lineHeight: 23, color: '#4F453B' }}
-                    >
-                      {para}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {mode === 'advanced' && allergyLines.length > 0 ? (
-              <View style={{ marginTop: 18 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>{t('result.allergyNotes', lang)}</Text>
-                <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 22, color: '#5D5246' }}>
-                  {allergyLines.join(' ')}
-                </Text>
-              </View>
-            ) : null}
-
-            {mode === 'advanced' && scan?.parentTakeaway ? (
-              <View style={{ marginTop: 16 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#7D6B58' }}>{t('result.parentTakeaway', lang)}</Text>
-                <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 21, color: '#5D5246' }}>{locLine(scan.parentTakeaway)}</Text>
-              </View>
-            ) : null}
+                )}
 
                 <View style={{ marginTop: 20, flexDirection: 'row', gap: 10 }}>
                   <Pressable

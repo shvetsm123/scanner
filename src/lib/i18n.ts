@@ -55,10 +55,12 @@ const EN: Record<string, string> = {
   'home.favorite.r1': 'No live product data on this device',
   'home.favorite.r2': 'Scan for sugar, salt, and ingredients',
   'home.favorite.r3': 'Labels and formulas can change',
+  'home.favorite.r4': 'Rescan to load Open Food Facts composition on this device',
   'home.favorite.b1':
     'This favorite was opened without a stored scan on this device, so there is no fresh ingredient list or nutrition snapshot to review here.',
   'home.favorite.b2':
     'Scan the barcode again to load the product page and get a fact-based breakdown for your child’s age.',
+  'home.favorite.why': 'Without a stored scan here, we cannot tie fresh label facts to your child’s age for this barcode.',
   'home.favorite.parent': 'Scan again when you have the package.',
 
   'scan.reuseBanner': 'Already scanned — opening saved result',
@@ -151,6 +153,20 @@ const EN: Record<string, string> = {
   'result.ingredientBreakdown': 'Ingredient breakdown',
   'result.allergyNotes': 'Allergy notes',
   'result.parentTakeaway': 'Parent takeaway',
+  'result.tab.general': 'General',
+  'result.tab.ingredients': 'Ingredients',
+  'result.whyMatters': 'Why this matters',
+  'result.ingredients.heading': 'Ingredient breakdown',
+  'result.ingredients.good': 'Good',
+  'result.ingredients.neutral': 'Neutral',
+  'result.ingredients.red': 'Red flags',
+  'result.ingredients.fallback':
+    "We couldn't get a clean ingredient list for this product.",
+  'result.ingredients.failBreakdown':
+    "We couldn't build a clean ingredient breakdown for this product.",
+  'ing.note.fallback': 'Typical recipe ingredient in this product.',
+  'ing.footer.allergens': 'Declared on packaging',
+  'ing.footer.traces': 'Traces (may contain)',
   'result.close': 'Close',
   'result.scanAgain': 'Scan again',
   'result.a11y.removeFav': 'Remove from favorites',
@@ -166,14 +182,18 @@ const EN: Record<string, string> = {
   'unknown.r1': 'No product page matched this barcode',
   'unknown.r2': 'Sugar and salt not available here',
   'unknown.r3': 'Scan again with a clearer barcode',
+  'unknown.r4': 'No Open Food Facts composition is available for this placeholder entry',
   'unknown.b1': 'Without a matched product, we cannot summarize what the ingredient list looks like.',
   'unknown.b2': 'Try scanning again with a clearer view of the barcode so we can load real product text.',
+  'unknown.why': 'Without a matched product page, there is nothing authoritative to compare to your child’s age.',
   'unknown.parent': 'Scan again when the barcode is readable.',
 
   'fb.summary': 'For this age, the check did not finish—try again.',
   'fb.q.r1': 'Product listing could not be re-checked here',
   'fb.q.r2': 'Sugar, salt, and ingredient details may be on the package',
   'fb.q.r3': 'Scan again when you are online',
+  'fb.q.r4': 'A fresh scan reloads sugar, salt, and label-style checks for this barcode',
+  'fb.why': 'Without a completed check, the app could not tie this barcode to fresh label-style facts for your child’s age.',
   'fb.a.r1': 'Product listing could not be re-checked in the app this time',
   'fb.a.r2': 'Sugar, salt, and saturated fat values need a fresh fetch from the database',
   'fb.a.r3': 'Ingredient order and sweetener cues were not reloaded for this pass',
@@ -322,6 +342,8 @@ LOCALES.ru = {
   'home.favorite.r1': 'Нет актуальных данных о товаре на устройстве',
   'home.favorite.r2': 'Отсканируйте сахар, соль и состав',
   'home.favorite.r3': 'Этикетки и рецептуры могут меняться',
+  'home.favorite.r4': 'Отсканируйте снова, чтобы подтянуть состав Open Food Facts',
+  'home.favorite.why': 'Без сохранённого скана здесь нельзя связать свежие данные с возрастом ребёнка.',
   'home.favorite.b1':
     'Избранное открыто без сохранённого сканирования на этом устройстве — нет свежего состава и КБЖУ.',
   'home.favorite.b2': 'Отсканируйте штрихкод снова, чтобы загрузить страницу товара и разбор по возрасту ребёнка.',
@@ -418,6 +440,8 @@ LOCALES.ru = {
   'unknown.r1': 'Нет страницы товара для этого штрихкода',
   'unknown.r2': 'Сахар и соль здесь недоступны',
   'unknown.r3': 'Отсканируйте штрихкод чётче',
+  'unknown.r4': 'Нет состава Open Food Facts для этой записи',
+  'unknown.why': 'Без страницы товера нельзя сопоставить факты с возрастом ребёнка.',
   'unknown.b1': 'Без совпадения нельзя описать состав.',
   'unknown.b2': 'Отсканируйте снова с лучшим видом штрихкода.',
   'unknown.parent': 'Отсканируйте снова, когда штрихкод читается.',
@@ -425,6 +449,8 @@ LOCALES.ru = {
   'fb.q.r1': 'Не удалось перепроверить карточку здесь',
   'fb.q.r2': 'Сахар, соль и состав могут быть на упаковке',
   'fb.q.r3': 'Повторите, когда будет сеть',
+  'fb.q.r4': 'Повторное сканирование подтянет сахар, соль и проверки по этикетке',
+  'fb.why': 'Без завершённой проверки нельзя связать штрихкод со свежими данными для возраста ребёнка.',
   'fb.a.r1': 'Не удалось перепроверить карточку в приложении',
   'fb.a.r2': 'Нужна свежая выгрузка сахара, соли и насыщенных жиров',
   'fb.a.r3': 'Порядок ингредиентов и подсказки по сладостям не подгрузились',
@@ -490,6 +516,22 @@ LOCALES.ru = {
   'nut.suffix.per100ml': ' / 100 мл',
   'nut.phrase.per100g': 'на 100 г',
   'nut.phrase.per100ml': 'на 100 мл',
+
+  'result.tab.general': 'Общее',
+  'result.tab.ingredients': 'Состав',
+  'result.whyMatters': 'Почему это важно',
+  'ing.footer.allergens': 'Указано на упаковке',
+  'ing.footer.traces': 'Следы (может содержать)',
+  'ing.note.fallback': 'Обычный ингредиент рецепта в этом продукте.',
+  'result.ingredients.fallback':
+    'Не удалось получить чистый список ингредиентов для этого товара.',
+
+  'result.ingredients.heading': 'Разбор состава',
+  'result.ingredients.good': 'Хорошее',
+  'result.ingredients.neutral': 'Нейтрально',
+  'result.ingredients.red': 'Красные флаги',
+  'result.ingredients.failBreakdown':
+    'Не удалось собрать чистый разбор состава для этого продукта.',
 };
 
 // German (abbreviated patch — merges with EN for any missing key)
@@ -607,6 +649,28 @@ LOCALES.de = {
   'avoid.palm_oil': 'Palmöl',
   'favUpsell.title': 'Favoriten mit Unbegrenzt',
   'favUpsell.msg': 'Speichern Sie Produkte mit dem Unbegrenzt-Tarif.',
+
+  'result.tab.general': 'Übersicht',
+  'result.tab.ingredients': 'Zutaten',
+  'result.whyMatters': 'Warum das wichtig ist',
+  'result.parentTakeaway': 'Fazit für Eltern',
+  'result.matchesAvoid': 'Treffer mit Ihrer Meiden-Liste',
+  'result.barcodeLabel': 'Barcode:',
+  'ing.footer.allergens': 'Auf der Verpackung angegeben',
+  'ing.footer.traces': 'Spuren (kann enthalten)',
+  'ing.note.fallback': 'Übliche Rezeptzutat in diesem Produkt.',
+  'result.ingredients.fallback':
+    'Für dieses Produkt konnten wir keine saubere Zutatenliste anzeigen.',
+  'result.a11y.removeFav': 'Aus Favoriten entfernen',
+  'result.a11y.addFav': 'Zu Favoriten hinzufügen',
+  'result.a11y.favLocked': 'Favoriten mit Unbegrenzt',
+
+  'result.ingredients.heading': 'Zutaten im Überblick',
+  'result.ingredients.good': 'Gut',
+  'result.ingredients.neutral': 'Neutral',
+  'result.ingredients.red': 'Warnsignale',
+  'result.ingredients.failBreakdown':
+    'Für dieses Produkt konnten wir keinen sauberen Zutatenüberblick erstellen.',
 };
 
 LOCALES.fr = {
@@ -663,6 +727,30 @@ LOCALES.fr = {
   'nut.suffix.per100ml': ' / 100 ml',
   'nut.phrase.per100g': 'pour 100 g',
   'nut.phrase.per100ml': 'pour 100 ml',
+
+  'common.scanResult': 'Résultat du scan',
+  'scan.reuseBanner': 'Déjà scanné — ouverture du résultat enregistré',
+  'result.tab.general': 'Général',
+  'result.tab.ingredients': 'Ingrédients',
+  'result.whyMatters': 'Pourquoi c’est important',
+  'result.parentTakeaway': 'Conclusion pour les parents',
+  'result.matchesAvoid': 'Correspond à votre liste à éviter',
+  'result.barcodeLabel': 'Code-barres :',
+  'ing.footer.allergens': 'Indiqué sur l’emballage',
+  'ing.footer.traces': 'Traces (peut contenir)',
+  'ing.note.fallback': 'Ingrédient de recette courant dans ce produit.',
+  'result.ingredients.fallback':
+    'Impossible d’afficher une liste d’ingrédients fiable pour ce produit.',
+  'result.a11y.removeFav': 'Retirer des favoris',
+  'result.a11y.addFav': 'Ajouter aux favoris',
+  'result.a11y.favLocked': 'Favoris avec Illimité',
+
+  'result.ingredients.heading': 'Ingrédients en détail',
+  'result.ingredients.good': 'Positif',
+  'result.ingredients.neutral': 'Neutre',
+  'result.ingredients.red': 'Points d’attention',
+  'result.ingredients.failBreakdown':
+    'Nous n’avons pas pu établir une analyse d’ingrédients fiable pour ce produit.',
 };
 
 LOCALES.es = {
@@ -691,6 +779,30 @@ LOCALES.es = {
   'avoid.milk': 'Leche',
   'avoid.gluten': 'Gluten',
   'avoid.nuts': 'Frutos secos',
+
+  'common.scanResult': 'Resultado del escaneo',
+  'scan.reuseBanner': 'Ya escaneado — abriendo resultado guardado',
+  'result.tab.general': 'General',
+  'result.tab.ingredients': 'Ingredientes',
+  'result.whyMatters': 'Por qué importa',
+  'result.parentTakeaway': 'Conclusión para padres',
+  'result.matchesAvoid': 'Coincide con tu lista a evitar',
+  'result.barcodeLabel': 'Código de barras:',
+  'ing.footer.allergens': 'Declarado en el envase',
+  'ing.footer.traces': 'Trazas (puede contener)',
+  'ing.note.fallback': 'Ingrediente habitual de la receta en este producto.',
+  'result.ingredients.fallback':
+    'No pudimos mostrar una lista de ingredientes fiable para este producto.',
+  'result.a11y.removeFav': 'Quitar de favoritos',
+  'result.a11y.addFav': 'Añadir a favoritos',
+  'result.a11y.favLocked': 'Favoritos con Ilimitado',
+
+  'result.ingredients.heading': 'Desglose de ingredientes',
+  'result.ingredients.good': 'Bueno',
+  'result.ingredients.neutral': 'Neutro',
+  'result.ingredients.red': 'Señales de alerta',
+  'result.ingredients.failBreakdown':
+    'No pudimos preparar un desglose de ingredientes fiable para este producto.',
 };
 
 LOCALES.it = {
@@ -712,6 +824,30 @@ LOCALES.it = {
   'avoid.milk': 'Latte',
   'avoid.gluten': 'Glutine',
   'avoid.nuts': 'Frutta a guscio',
+
+  'common.scanResult': 'Risultato scansione',
+  'scan.reuseBanner': 'Già scansionato — apertura del risultato salvato',
+  'result.tab.general': 'Generale',
+  'result.tab.ingredients': 'Ingredienti',
+  'result.whyMatters': 'Perché conta',
+  'result.parentTakeaway': 'Sintesi per i genitori',
+  'result.matchesAvoid': 'Corrisponde alla tua lista da evitare',
+  'result.barcodeLabel': 'Codice a barre:',
+  'ing.footer.allergens': 'Indicato sulla confezione',
+  'ing.footer.traces': 'Tracce (può contenere)',
+  'ing.note.fallback': 'Ingrediente tipico della ricetta in questo prodotto.',
+  'result.ingredients.fallback':
+    'Non è stato possibile mostrare un elenco ingredienti affidabile per questo prodotto.',
+  'result.a11y.removeFav': 'Rimuovi dai preferiti',
+  'result.a11y.addFav': 'Aggiungi ai preferiti',
+  'result.a11y.favLocked': 'Preferiti con Illimitato',
+
+  'result.ingredients.heading': 'Ingredienti in sintesi',
+  'result.ingredients.good': 'Buono',
+  'result.ingredients.neutral': 'Neutro',
+  'result.ingredients.red': 'Attenzione',
+  'result.ingredients.failBreakdown':
+    'Non siamo riusciti a creare una panoramica affidabile degli ingredienti per questo prodotto.',
 };
 
 LOCALES.pl = {
@@ -733,6 +869,30 @@ LOCALES.pl = {
   'avoid.milk': 'Mleko',
   'avoid.gluten': 'Gluten',
   'avoid.nuts': 'Orzechy',
+
+  'common.scanResult': 'Wynik skanowania',
+  'scan.reuseBanner': 'Już zeskanowano — otwieramy zapisany wynik',
+  'result.tab.general': 'Ogólne',
+  'result.tab.ingredients': 'Skład',
+  'result.whyMatters': 'Dlaczego to ważne',
+  'result.parentTakeaway': 'Podsumowanie dla rodziców',
+  'result.matchesAvoid': 'Zgadza się z listą unikań',
+  'result.barcodeLabel': 'Kod kreskowy:',
+  'ing.footer.allergens': 'Podane na opakowaniu',
+  'ing.footer.traces': 'Ślady (może zawierać)',
+  'ing.note.fallback': 'Typowy składnik receptury w tym produkcie.',
+  'result.ingredients.fallback':
+    'Nie udało się pokazać wiarygodnej listy składników dla tego produktu.',
+  'result.a11y.removeFav': 'Usuń z ulubionych',
+  'result.a11y.addFav': 'Dodaj do ulubionych',
+  'result.a11y.favLocked': 'Ulubione z planem Bez limitu',
+
+  'result.ingredients.heading': 'Skład w skrócie',
+  'result.ingredients.good': 'Dobre',
+  'result.ingredients.neutral': 'Neutralne',
+  'result.ingredients.red': 'Ostrzeżenia',
+  'result.ingredients.failBreakdown':
+    'Nie udało nam się przygotować czytelnego podziału składników dla tego produktu.',
 };
 
 LOCALES.pt = {
@@ -754,6 +914,30 @@ LOCALES.pt = {
   'avoid.milk': 'Leite',
   'avoid.gluten': 'Glúten',
   'avoid.nuts': 'Frutos secos',
+
+  'common.scanResult': 'Resultado do scan',
+  'scan.reuseBanner': 'Já lido — a abrir resultado guardado',
+  'result.tab.general': 'Geral',
+  'result.tab.ingredients': 'Ingredientes',
+  'result.whyMatters': 'Por que importa',
+  'result.parentTakeaway': 'Conclusão para os pais',
+  'result.matchesAvoid': 'Corresponde à sua lista a evitar',
+  'result.barcodeLabel': 'Código de barras:',
+  'ing.footer.allergens': 'Indicado na embalagem',
+  'ing.footer.traces': 'Traços (pode conter)',
+  'ing.note.fallback': 'Ingrediente típico da receita neste produto.',
+  'result.ingredients.fallback':
+    'Não foi possível mostrar uma lista de ingredientes fiável para este produto.',
+  'result.a11y.removeFav': 'Remover dos favoritos',
+  'result.a11y.addFav': 'Adicionar aos favoritos',
+  'result.a11y.favLocked': 'Favoritos com Ilimitado',
+
+  'result.ingredients.heading': 'Ingredientes em destaque',
+  'result.ingredients.good': 'Bom',
+  'result.ingredients.neutral': 'Neutro',
+  'result.ingredients.red': 'Sinais de alerta',
+  'result.ingredients.failBreakdown':
+    'Não conseguimos montar uma análise de ingredientes limpa para este produto.',
 };
 
 LOCALES.nl = {
@@ -775,6 +959,30 @@ LOCALES.nl = {
   'avoid.milk': 'Melk',
   'avoid.gluten': 'Gluten',
   'avoid.nuts': 'Noten',
+
+  'common.scanResult': 'Scanresultaat',
+  'scan.reuseBanner': 'Al gescand — opgeslagen resultaat openen',
+  'result.tab.general': 'Algemeen',
+  'result.tab.ingredients': 'Ingrediënten',
+  'result.whyMatters': 'Waarom dit telt',
+  'result.parentTakeaway': 'Kort voor ouders',
+  'result.matchesAvoid': 'Komt overeen met je vermijd-lijst',
+  'result.barcodeLabel': 'Streepjescode:',
+  'ing.footer.allergens': 'Vermeld op de verpakking',
+  'ing.footer.traces': 'Sporen (kan bevatten)',
+  'ing.note.fallback': 'Gangig receptingrediënt in dit product.',
+  'result.ingredients.fallback':
+    'We konden geen betrouwbare ingrediëntenlijst tonen voor dit product.',
+  'result.a11y.removeFav': 'Uit favorieten halen',
+  'result.a11y.addFav': 'Toevoegen aan favorieten',
+  'result.a11y.favLocked': 'Favorieten met Onbeperkt',
+
+  'result.ingredients.heading': 'Ingredientenoverzicht',
+  'result.ingredients.good': 'Goed',
+  'result.ingredients.neutral': 'Neutraal',
+  'result.ingredients.red': 'Let op',
+  'result.ingredients.failBreakdown':
+    'We konden geen helder ingrediëntenoverzicht voor dit product samenstellen.',
 };
 
 LOCALES.uk = {
@@ -827,4 +1035,28 @@ LOCALES.uk = {
   'nut.suffix.per100ml': ' / 100 мл',
   'nut.phrase.per100g': 'на 100 г',
   'nut.phrase.per100ml': 'на 100 мл',
+
+  'common.scanResult': 'Результат сканування',
+  'scan.reuseBanner': 'Уже скановано — відкриваємо збережений результат',
+  'result.tab.general': 'Загальне',
+  'result.tab.ingredients': 'Склад',
+  'result.whyMatters': 'Чому це важливо',
+  'result.parentTakeaway': 'Висновок для батьків',
+  'result.matchesAvoid': 'Збіги зі списком уникнення',
+  'result.barcodeLabel': 'Штрихкод:',
+  'ing.footer.allergens': 'Вказано на упаковці',
+  'ing.footer.traces': 'Сліди (може містити)',
+  'ing.note.fallback': 'Звичайний інгредієнт рецепту в цьому продукті.',
+  'result.ingredients.fallback':
+    'Не вдалося показати надійний список інгредієнтів для цього продукту.',
+  'result.a11y.removeFav': 'Прибрати з обраного',
+  'result.a11y.addFav': 'Додати в обране',
+  'result.a11y.favLocked': 'Обране з тарифом Безліміт',
+
+  'result.ingredients.heading': 'Склад і розбір',
+  'result.ingredients.good': 'Добре',
+  'result.ingredients.neutral': 'Нейтрально',
+  'result.ingredients.red': 'Червоні прапорці',
+  'result.ingredients.failBreakdown':
+    'Не вдалося зібрати чистий розбір складу для цього продукту.',
 };

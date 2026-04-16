@@ -58,6 +58,7 @@ export function localizeAiResultStrings(ai: AiResult, lang: AppLanguage): AiResu
     ingredientFlags: ai.ingredientFlags.map(loc),
     ingredientBreakdown: ai.ingredientBreakdown.map(loc),
     allergyNotes: ai.allergyNotes.map(loc),
+    whyThisMatters: loc(ai.whyThisMatters),
     parentTakeaway: loc(ai.parentTakeaway),
     guidanceContext: ai.guidanceContext.map(loc),
   };

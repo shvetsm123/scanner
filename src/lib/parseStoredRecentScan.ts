@@ -1,5 +1,6 @@
 import { clampFinalVerdictToBase } from './preferenceMatchers';
 import type { RecentScan, Verdict } from '../types/scan';
+import { parseIngredientAiPanelJson } from './ingredientAiPanel';
 
 const VERDICTS: readonly Verdict[] = ['good', 'sometimes', 'avoid', 'unknown'];
 
@@ -90,10 +91,13 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
     return null;
   }
 
-  const whyText =
-    typeof o.whyText === 'string' && o.whyText.trim().length > 0
-      ? o.whyText.trim()
-      : 'This is an older saved scan without a stored explanation for the verdict.';
+  const whyThisMatters =
+    typeof o.whyThisMatters === 'string' && o.whyThisMatters.trim().length >= 12
+      ? o.whyThisMatters.trim()
+      : typeof o.whyText === 'string' && o.whyText.trim().length > 0
+        ? o.whyText.trim()
+        : 'This is an older saved scan without a stored explanation for the verdict.';
+  const whyText = whyThisMatters;
   const parentTakeaway =
     typeof o.parentTakeaway === 'string' && o.parentTakeaway.trim().length > 0
       ? o.parentTakeaway.trim()
@@ -118,6 +122,7 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
     summary,
     reasons,
     whyText,
+    whyThisMatters,
     ingredientBreakdown: ingredientBreakdownFromUnknown(o),
     allergyNotes: allergyNotesFromUnknown(o),
     parentTakeaway,
@@ -163,6 +168,15 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
   const ack = o.analysisContextKey;
   if (typeof ack === 'string' && ack.trim()) {
     out.analysisContextKey = ack.trim();
+  }
+
+  if (o.ingredientPanel != null) {
+    const panel = parseIngredientAiPanelJson(o.ingredientPanel);
+    if (panel) {
+      out.ingredientPanel = panel;
+    } else {
+      console.warn('[IngredientsPanel][parseStored]', 'ingredientPanel present but failed validation — dropped');
+    }
   }
 
   return out;

@@ -1,4 +1,5 @@
 import { fetch as expoFetch } from 'expo/fetch';
+import * as Localization from 'expo-localization';
 import { Platform } from 'react-native';
 
 import { buildOfficialGuidanceContextLines } from '../lib/officialGuidanceContext';
@@ -6,123 +7,107 @@ import { localizeAiResultStrings } from '../lib/localizeScanText';
 import { OUTPUT_LANGUAGE_NAMES } from '../lib/i18n';
 import { getFallbackAiResult } from '../lib/getFallbackAiResult';
 import { normalizeCanonicalAiPayload } from '../lib/resultStyleHelpers';
-import type { AiResult, KidsAiInput } from '../types/ai';
-import type { ResultStyle } from '../types/preferences';
+import type { AiResult, IngredientsAiInput, KidsAiInput } from '../types/ai';
+import type { IngredientAiPanel } from '../types/scan';
+import { parseIngredientAiPanelJson } from '../lib/ingredientAiPanel';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
 const LOG_PREFIX = '[OpenAI]';
 
-const SYSTEM_PROMPT = `You write scan results for ONE packaged food or drink for parents, childAge in the input. Output JSON ONLY. No markdown.
+const SYSTEM_PROMPT = `You write the GENERAL tab of a scan result for ONE packaged food or drink for parents; childAge is in the input. The app shows ingredients separately from Open Food Facts—do not try to list every ingredient in your JSON. Output JSON ONLY. No markdown.
 
 OUTPUT LANGUAGE (mandatory)
-- The user message includes OUTPUT_LANGUAGE. Every natural-language string in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, parentTakeaway, guidanceContext) MUST be written entirely in that language.
-- Do not mix languages: no English nutrient labels, phrases, or sentences when OUTPUT_LANGUAGE is not English. In non-English outputs, translate terms such as sugar, salt, sodium, saturated fat, fat, carbohydrates, protein, fiber, energy, kcal, kJ into the OUTPUT_LANGUAGE (use standard nutrition wording parents expect in that locale).
-- Keep JSON keys in English. Copy product.productName, product.brand, product.barcode verbatim from input; keep raw ingredient tokens from the listing as in the data when you must quote them.
+- The user message includes OUTPUT_LANGUAGE. Every natural-language string in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, whyThisMatters, parentTakeaway, guidanceContext) MUST be written entirely in that language.
+- Do not mix languages. In non-English outputs, translate nutrition terms (sugar, salt, sodium, saturated fat, energy, kcal, kJ, etc.) into OUTPUT_LANGUAGE.
+- Keep JSON keys in English. Copy product.productName, product.brand, product.barcode verbatim from input.
 
 CORE ORDER
-1) Facts from the listing first (ingredients_text, allergens, categories, nutriments, product_name, brand, barcode only—no guessing).
-2) Short, practical child-age interpretation second. Never sound clinical or like a doctor. No lectures.
+1) Facts from the listing only: ingredients_text, allergens, categories, nutriments, product fields—no guessing.
+2) Short, direct child-age interpretation. Not clinical. No filler.
 
 AUTHORITATIVE VERDICTS (non-negotiable)
-- ruleBasedBaseVerdict is the app's hard outcome. Set baseVerdict to exactly the same string as ruleBasedBaseVerdict.
-- finalVerdict: if avoidPreferences is empty or nothing matches, finalVerdict MUST equal ruleBasedBaseVerdict. If an avoid clearly matches product text, finalVerdict may be stricter than ruleBasedBaseVerdict but NEVER more lenient.
-- summary, reasons, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, parentTakeaway, and guidanceContext MUST align with those verdicts.
+- baseVerdict MUST equal ruleBasedBaseVerdict.
+- finalVerdict: if avoidPreferences is empty or nothing matches, finalVerdict MUST equal ruleBasedBaseVerdict. If an avoid clearly matches product text, finalVerdict may be stricter but NEVER more lenient.
+- All text fields MUST align with those verdicts.
 
 AVOID PREFERENCES
 - If avoidPreferences is missing or empty: preferenceMatches MUST be [].
-- If non-empty: list preferenceMatches only when clearly supported by product text; otherwise [].
+- Otherwise list preferenceMatches only when clearly supported by product text.
 
 DATA HONESTY
-- Never invent grams, allergens, caffeine, or sweeteners. If a number is missing from nutriments, do not state a gram value; say nutrition is missing or not on the listing if relevant.
-- If added sugar is not explicitly confirmed, use cautious wording ("Sweetened product", "Sugar appears in the ingredient list")—do not claim a numeric "added sugar" unless the data supports it.
-- Use nutriments keys when present (e.g. sugars_100g, salt_100g, sodium_100g, saturated-fat_100g, energy-kcal_100g). Prefer salt_100g; if only sodium_100g exists, you may phrase sodium in mg per 100 g (convert from g if needed).
-- Detect sweeteners or caffeine only from clear ingredient/category/name signals, not assumptions.
+- Never invent grams, allergens, caffeine, or sweeteners. If a number is missing from nutriments, do not state a gram value.
+- Use nutriments keys when present (sugars_100g, salt_100g, sodium_100g, saturated-fat_100g, energy-kcal_100g). Prefer salt_100g; if only sodium_100g, you may give sodium in mg per 100 g (convert from g).
 
-OFFICIAL-STYLE ANCHORS (paraphrase only; no URLs; no long citations; never name-drop as legal claims)
-- CDC / Dietary Guidelines spirit: children under 2 should not have added sugars—when ingredients or numbers support it, say so plainly and strictly for under-2.
-- NHS-style child free-sugar bands (rough daily guidance often cited for parents): ages 2–3 about 14 g/day, 4–6 about 19 g/day, 7–10 about 24 g/day—only compare to these when sugars_100g (or clear sweetening from the listing) supports a fair share-of-day comment; never invent grams not on the listing.
-- WHO: free sugars are often discussed as staying below about 10% of total energy, ideally below about 5%—only bring this in when energy-kcal_100g and sugars_100g together support a calories-from-sugars share comment; total sugars on a label are not always the same as "free sugars", so phrase cautiously ("sugars listed here", "a sizable share of the calories listed").
-- EU / EFSA-style framing: use it lightly for child-sensitive salt or overall label-reading context—e.g. high salt for a small child’s snack—only when salt_100g or sodium_100g supports it.
+AGE + PRODUCT TYPE
+- Frame by childAge using listing support only (categories, name, ingredients, nutriments).
+- Infer product type only when supported (yogurt, dessert, snack, drink, cereal, etc.).
 
-AGE FRAMING (brief, official-style, not quoted)
-- Under 2: added sugar / clearly sweetened products—strict wording aligned with "generally not recommended" for added sugars when the listing supports it.
-- 2–10: when per-100g sugar exists, you may relate it to the small NHS-cited daily free-sugar amounts above (noticeable or large share of the day)—no fake portions.
-- Never use vague praise like "nutrient-rich", "natural vegetable", "age-appropriate", "healthy option", "can be enjoyed in moderation" unless tightly justified by data (prefer not to use them at all).
+BANNED PHRASING (do not use, even rephrased)
+- "Can be enjoyed in moderation", "not ideal", "age-appropriate", "in moderation", "everything in balance" style hedging.
 
-PRODUCT TYPE
-- Infer obvious type only when supported by categories/name/ingredients (yogurt, dessert, cookies, chips, candy, snack, drink, puree, cereal, pasta, plain food, etc.).
+PREFERRED TONE (examples only—do not copy)
+- "Too sugary for a strong everyday pick."
+- "This is more candy than snack."
+- "For this age, this is a weak choice."
 
 SUMMARY (one sentence)
-- One short child-focused sentence (interpretation), different in tone from the factual bullets.
-- You may add one short official-guidance-aware clause in the same sentence ONLY when nutriments or ingredient text supports it (e.g. under-2 added sugar; NHS-band sugar allowance share; WHO-style calorie share from listed sugars; salt)—no URLs, no citation dumps.
-- Examples of tone (do not copy verbatim): "For this age, better sometimes than every day." / "For children under 2, added sugar is generally not recommended, and this listing supports that concern." / "For ages 4–6, this uses a noticeable share of the daily sugar allowance."
+- One short, strong sentence—verdict-aligned, age-aware, not watery. Must sound different from every reasons bullet.
 
-REASONS (array length depends on input.resultStyle — user message states exact counts)
-- Factual bullets first: sugar per 100 g or ml; salt (or sodium); saturated fat; sweetening / added sugar signals; sweeteners; caffeine; allergens; snack or dessert style; ingredient list length—only with listing support.
-- If a nutrient is missing, use a non-numeric factual line instead of inventing numbers.
-- Each reason MUST add a fact not already stated in summary or preferenceMatches. Do not paraphrase the summary thesis or repeat an avoid-list match (e.g. if preferenceMatches cover added sugar, do not use another bullet that only says the product is sugary or has added sugar—use a different angle: salt, sat fat, product type, processing, syrup/fruit form, ingredient-list length, allergens, etc.).
-- Do not restate the same nutrient thesis as nutritionSnapshot lines; bullets complement the snapshot rather than repeating the same per-100g point in different words.
+REASONS (factual bullets; exact count in user message)
+- Direct factual lines from nutriments, allergens, categories, ingredient-derived signals, product type. Each bullet must add a new fact vs summary and vs preferenceMatches (no second sugar-only bullet if sugar is already the avoid story—use salt, sat fat, type, processing, list signals, allergens, etc.).
+- NO repeated numbers rule: each numeric fact (same value + same unit context, e.g. the same sugar g/100 g line) appears at most once across summary, reasons, whyThisMatters, and parentTakeaway. If you state sugar as 12 g/100 g in one bullet, do not repeat that number in whyThisMatters or parentTakeaway or summary.
 
-nutritionSnapshot (array of strings, can be empty)
-- One line per useful fact from nutriments or explicit listing text. Depth scales with resultStyle (user message).
+whyThisMatters (one short paragraph, 12–320 characters)
+- One tight paragraph: why the verdict matters for this child age, using listing-backed logic—not a repeat of the summary sentence and not a numeric restatement of bullets.
+- No bullet list; no ingredient dump.
 
-ingredientFlags (array of strings, can be empty)
-- Short flag lines grounded in ingredients, allergens, categories. More lines expected for advanced (user message).
+parentTakeaway (one line, 8–220 characters)
+- One decisive closing line for parents; must not recycle numeric facts already given in reasons.
 
-ingredientBreakdown (2–4 strings)
-- Readable paragraphs (composition): what the product mainly is; simple vs formulated; sugar/sweetened nature if grounded; additives only if in data; allergen relevance; say when data is limited. Advanced paragraphs should be clearly fuller than quick (user message).
+nutritionSnapshot (array; can be empty)
+- Optional per-100g lines from nutriments (user message depth). Same numeric honesty as reasons; avoid duplicating numbers already used in reasons.
+
+ingredientFlags (array; can be empty)
+- Short grounded flags from ingredients/allergens/categories when useful.
+
+ingredientBreakdown
+- MUST be [] (empty array). Ingredient copy is handled by the app from Open Food Facts.
 
 allergyNotes (array)
-- 0–3 short factual lines from allergensText / clear tokens; empty if none.
+- 0–3 short factual lines from allergens text when useful; else [].
 
-parentTakeaway (one line)
-- One practical closing line aligned with verdict and age (e.g. "Better occasionally than daily for this age.").
-
-guidanceContext (array of strings)
-- For input.resultStyle "quick": MUST be [] (empty array).
-- For "advanced": 1–3 very short parent lines (max ~220 characters each) for a section like "Official guidance context". Use ONLY when at least one line is defensible from nutriments and/or explicit listing text (same honesty rules as elsewhere). If nothing defensible, use [].
-- No URLs; no long citations; no organization names required—plain parent language is fine.
-- Do not repeat the full summary; complement it with benchmark framing (CDC under-2 added sugars; NHS-cited daily free-sugar bands; WHO energy %; EU-style salt read for kids) only when data-backed.
+guidanceContext
+- 0–3 short lines only when defensible from nutriments/listing; else []. No URLs.
 
 CANONICAL OUTPUT (always include every key; arrays may be empty)
 {
   "baseVerdict": "good"|"sometimes"|"avoid"|"unknown",
   "finalVerdict": "good"|"sometimes"|"avoid"|"unknown",
   "summary": string,
-  "reasons": string[] (length per resultStyle; see user message),
+  "reasons": string[],
   "preferenceMatches": string[],
   "nutritionSnapshot": string[],
   "ingredientFlags": string[],
   "ingredientBreakdown": string[],
   "allergyNotes": string[],
+  "whyThisMatters": string,
   "parentTakeaway": string,
   "guidanceContext": string[]
 }
 
 Never infer cow's milk / dairy from yogurt alone; mention milk/dairy only when explicit in text or allergens.`;
 
-function depthInstructionsForResultStyle(resultStyle: ResultStyle): string {
-  if (resultStyle === 'advanced') {
-    return `REQUIRED COUNTS FOR THIS REQUEST (input.resultStyle is "advanced"):
-- reasons: 5 to 8 strings, each 8–180 characters, all distinct factual points (no filler). Prefer sugar, salt or sodium, saturated fat, sweetening, sweeteners, caffeine, allergens, product-type, ingredient-list complexity when evidence exists—each line must be non-redundant with summary, preferenceMatches, and nutritionSnapshot.
-- nutritionSnapshot: include every useful per-100g line supported by nutriments; if partly missing, one honest line is fine—never invent grams.
-- ingredientFlags: aim for 5–14 distinct flags when the listing supports them; fewer is fine if evidence is thin.
-- ingredientBreakdown: 3 or 4 paragraphs preferred (minimum 2). Each paragraph at least 40 characters, calmer than the bullet list, mini-article feel, still mobile-friendly.
-- guidanceContext: 1–3 short strings when official-style framing is supportable from the listing; otherwise []. Must not echo the summary verbatim.
-- summary stays one sentence and must not duplicate bullet wording.`;
-  }
-  return `REQUIRED COUNTS FOR THIS REQUEST (input.resultStyle is "quick"):
-- reasons: 3 to 5 strings, each 8–160 characters, factual and compact; each must differ from summary and preferenceMatches (no second sugar line if sugar is already the main story there).
-- nutritionSnapshot and ingredientFlags: keep sparse or empty unless a few lines add clear value.
-- ingredientBreakdown: 2 or 3 tighter paragraphs (minimum 2), each at least 22 characters; keep composition-focused but shorter than advanced.
-- guidanceContext MUST be [].`;
-}
+const GENERAL_DEPTH_INSTRUCTIONS = `REQUIRED COUNTS FOR THIS REQUEST:
+- reasons: 4 to 6 strings, each 8–200 characters, all distinct factual points. Ground every line in nutriments, allergens, categories, or ingredient_text signals (product type, added sugar signals, sweeteners, palm oil, flavorings, caffeine, processing hints)—only with listing support.
+- nutritionSnapshot: include useful per-100g lines from nutriments ONLY if those exact numbers are not already stated in reasons (avoid duplicate numbers).
+- ingredientFlags: up to 12 distinct flags when the listing supports them; [] is fine if thin.
+- ingredientBreakdown: MUST be [].
+- guidanceContext: 0–3 short strings when supportable; otherwise []. Must not repeat summary or whyThisMatters.
+- whyThisMatters: 12–320 characters, one paragraph, no numeric repeat of reasons.
+- summary: one sentence, distinct from all bullets.`;
 
 function enrichGuidanceContext(input: KidsAiInput, evaluation: AiResult): AiResult {
-  if (input.resultStyle !== 'advanced') {
-    return { ...evaluation, guidanceContext: [] };
-  }
   const existing = evaluation.guidanceContext?.map((s) => s.trim()).filter(Boolean) ?? [];
   if (existing.length > 0) {
     return { ...evaluation, guidanceContext: existing.slice(0, 3) };
@@ -162,7 +147,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
 
   if (!keyPresent) {
     console.warn(LOG_PREFIX, 'using fallback: missing API key');
-    return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
+    return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
   }
 
   const requestUrl = getOpenAiChatUrl();
@@ -183,12 +168,12 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `OUTPUT_LANGUAGE: ${input.outputLanguage} (${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}). Write 100% of explanatory text in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} only—no English fragments, no mixed-language lines, no English-only nutrient labels (e.g. do not output "Sugar: …" when the language is Russian; use the correct ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} wording for every label and sentence). All natural-language string values in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, parentTakeaway, guidanceContext) MUST be in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}. Keep JSON keys in English. Keep verbatim from input: product.productName, product.brand, product.barcode; do not translate raw ingredient tokens from the listing when quoting them. Verdict fields baseVerdict and finalVerdict must remain exactly one of: good, sometimes, avoid, unknown.
+            content: `OUTPUT_LANGUAGE: ${input.outputLanguage} (${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}). Write 100% of explanatory text in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} only. All natural-language string values in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, whyThisMatters, parentTakeaway, guidanceContext) MUST be in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}. Keep JSON keys in English. Keep verbatim from input: product.productName, product.brand, product.barcode. Verdict fields baseVerdict and finalVerdict must remain exactly one of: good, sometimes, avoid, unknown.
 
 Evaluate this input. Reply with JSON only:
 ${JSON.stringify(input)}
 
-${depthInstructionsForResultStyle(input.resultStyle)}`,
+${GENERAL_DEPTH_INSTRUCTIONS}`,
           },
         ],
       }),
@@ -201,7 +186,7 @@ ${depthInstructionsForResultStyle(input.resultStyle)}`,
 
     if (!response.ok) {
       console.warn(LOG_PREFIX, 'using fallback: HTTP not OK, status', response.status);
-      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
+      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
     }
 
     let data: { choices?: { message?: { content?: string } }[] };
@@ -209,20 +194,20 @@ ${depthInstructionsForResultStyle(input.resultStyle)}`,
       data = JSON.parse(rawText) as { choices?: { message?: { content?: string } }[] };
     } catch (parseBodyErr) {
       console.warn(LOG_PREFIX, 'using fallback: failed to parse response body as JSON:', parseBodyErr);
-      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
+      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
     }
 
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       console.warn(LOG_PREFIX, 'using fallback: missing or empty choices[0].message.content');
-      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
+      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
     }
 
     const parsed = parseJson(content.trim());
-    const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase, input.resultStyle);
+    const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase, 'advanced');
     if (!evaluation) {
       console.warn(LOG_PREFIX, 'using fallback: evaluation JSON failed validation', { parsed });
-      return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
+      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
     }
     const localizedEval = localizeAiResultStrings(evaluation, input.outputLanguage);
     const enriched = enrichGuidanceContext(input, localizedEval);
@@ -239,6 +224,155 @@ ${depthInstructionsForResultStyle(input.resultStyle)}`,
     const message = err instanceof Error ? err.message : String(err);
     console.warn(LOG_PREFIX, 'caught error:', message, err);
     console.warn(LOG_PREFIX, 'using fallback after error');
-    return getFallbackAiResult(ruleBase, input.resultStyle, input.outputLanguage);
+    return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+  }
+}
+
+const ING_LOG = '[OpenAI][Ingredients]';
+
+const INGREDIENTS_SYSTEM_PROMPT = `You are the Ingredients tab writer for parents. Input JSON includes:
+- cleanedIngredientLines: ordered REAL ingredient tokens from Open Food Facts ONLY (already cleaned—no nutrition blocks, no importer lines). These may be in Bulgarian or other languages—they are SOURCE DATA ONLY.
+- additivesTags, allergensDeclared, traceDeclared: context only—do not invent extra rows.
+- avoidPreferenceIds, childAge, outputLanguage, localeHint (device locale when present).
+
+Output EXACTLY this JSON shape (keys spelled exactly: good, neutral, redFlags):
+{
+  "good": [ { "name": "string", "note": "string" } ],
+  "neutral": [ { "name": "string", "note": "string" } ],
+  "redFlags": [ { "name": "string", "note": "string" } ]
+}
+
+LANGUAGE LOCK (mandatory — highest priority)
+- outputLanguage defines the ONLY language allowed in every "name" and every "note" in good, neutral, and redFlags. One language end-to-end. No mixing.
+- When outputLanguage is "ru": write standard Russian ONLY in all name and note fields. No Bulgarian, no English, no Ukrainian, no Latin marketing snippets in the output strings.
+- When outputLanguage is "uk": write standard Ukrainian ONLY. No Russian, no Bulgarian, no English mixed in.
+- When outputLanguage is "en": English ONLY in all name and note fields.
+- For de, fr, es, it, pl, pt, nl: write ONLY that target language in name and note—no English, no Bulgarian, no other language mixed in.
+- You MUST translate or adapt every ingredient name from cleanedIngredientLines into the target language. Do NOT copy source-language (e.g. Bulgarian) tokens into "name" or "note" when outputLanguage is Russian, Ukrainian, etc.
+- Notes must also be written entirely in the target language—never leave notes in English or Bulgarian when the target is Russian or Ukrainian.
+
+STRICT RULES
+1) Cover cleanedIngredientLines: each token must be reflected in your output (translate or merge obvious duplicate/split fragments of the same substance). Prefer one row per token; if you merge duplicates, total rows may be slightly less than the array length—then every remaining row must still map clearly to those tokens.
+2) name and note: 100% in outputLanguage only. Natural ingredient names in that language—not raw OFF copy-paste in another script.
+3) note: about 6–22 words. Tone: direct, emotional, clear, not euphemistic—still grounded in what the token is. Vary wording across rows; never one boilerplate note for all.
+4) SUGARS (critical): do NOT default sugar to neutral. Added / free sugars (sugar, sucrose, glucose-fructose syrup, glucose syrup, invert sugar, HFCS, malt extract, molasses, dextrose, fructose syrup, icing sugar, caramel, sweetened condensed milk as a sugar carrier, etc.) belong in redFlags when they are clearly sweetening / bulk sugar—not in neutral “by default”.
+5) Other redFlags when the token supports it: glucose syrup, molasses, heavy syrup sweeteners, palm oil (cheap processed fat), hydrogenated / partially hydrogenated fats, artificial flavourings / flavourings that read industrial, intense sweeteners, obvious junk fats, heavy preservatives, caffeine in kid-relevant products, etc.
+6) good: simple, wholesome bases when the token supports it (water, whole fruit, veg, plain oats, pulses, plain dairy when clearly unprocessed, etc.).
+7) neutral: ordinary recipe ingredients that are not sugar bombs and not industrial red-flag material (flour, starch, salt in normal use, citric acid, lecithin, vanilla as a real spice, etc.).
+8) Soy, milk, eggs, gluten/wheat, nuts: default neutral with a factual note UNLESS avoidPreferenceIds or allergensDeclared / traceDeclared clearly calls for a sharper warning—then redFlags with a specific, contextual note (allergen / avoid list), not “automatically bad”. When avoidPreferenceIds is relevant to an ingredient, you may briefly say so in that row’s note (still in outputLanguage only).
+9) additivesTags: hints for E-numbers only—still one row per cleaned line, no extra ingredients.
+10) Never output i18n keys or snake_case ids in name or note.
+
+BANNED soft filler (do not use): “consume in moderation”, “in moderation”, “common sweetener”, “not ideal”, “everything in balance”, vague “may contain” speculation.
+
+NOTE STYLE EXAMPLES (rewrite fully in outputLanguage only; do not copy English examples into non-English outputs): added sugar as a worst offender for a child; glucose syrup as fast sugar with almost no value; molasses as another dense sugar source; palm oil as cheap processed fat; flavouring as making the product feel artificial; lecithin as a common emulsifier, minor by itself; citric acid as a normal acid regulator; peanuts as a real ingredient but a serious allergen.`;
+
+export async function evaluateIngredientsWithAi(input: IngredientsAiInput): Promise<IngredientAiPanel | null> {
+  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+  if (typeof apiKey !== 'string' || !apiKey.trim()) {
+    console.warn(ING_LOG, 'skip: no API key');
+    return null;
+  }
+  const expected = input.cleanedIngredientLines.length;
+  if (expected === 0) {
+    console.warn(ING_LOG, 'skip: empty cleanedIngredientLines');
+    return null;
+  }
+  const deviceLocaleTag =
+    input.localeHint ??
+    (() => {
+      try {
+        return Localization.getLocales()?.[0]?.languageTag;
+      } catch {
+        return undefined;
+      }
+    })();
+  console.warn(ING_LOG, 'detected app language sent to Ingredients AI pass', {
+    outputLanguage: input.outputLanguage,
+    outputLanguageName: OUTPUT_LANGUAGE_NAMES[input.outputLanguage],
+    localeHint: deviceLocaleTag ?? input.outputLanguage,
+  });
+  console.warn(ING_LOG, 'cleanedIngredientLines before request', { count: expected, lines: input.cleanedIngredientLines });
+  const requestUrl = getOpenAiChatUrl();
+  try {
+    const response = await expoFetch(requestUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        temperature: 0.35,
+        max_tokens: 8192,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: INGREDIENTS_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: `TARGET_APP_LANGUAGE_CODE: ${input.outputLanguage}
+TARGET_APP_LANGUAGE_NAME: ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}
+DEVICE_LOCALE_BCP47: ${deviceLocaleTag ?? input.outputLanguage}
+
+All "name" and "note" strings in good, neutral, and redFlags MUST be written ONLY in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} — single language, no mixing. Translate every ingredient name from the source tokens; do not leave Bulgarian, English, or other languages in the output when the target is ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}.
+
+Reply with JSON only:
+${JSON.stringify({
+              ...input,
+              outputLanguageName: OUTPUT_LANGUAGE_NAMES[input.outputLanguage],
+              localeHint: deviceLocaleTag ?? input.outputLanguage,
+            })}`,
+          },
+        ],
+      }),
+    });
+    const rawText = await response.text();
+    console.warn(ING_LOG, 'raw HTTP response (first 1200 chars)', rawText.slice(0, 1200));
+    if (!response.ok) {
+      console.warn(ING_LOG, 'HTTP not OK', response.status);
+      return null;
+    }
+    let data: { choices?: { message?: { content?: string } }[] };
+    try {
+      data = JSON.parse(rawText) as { choices?: { message?: { content?: string } }[] };
+    } catch (e) {
+      console.warn(ING_LOG, 'failed to parse outer response JSON', e);
+      return null;
+    }
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      console.warn(ING_LOG, 'empty assistant content');
+      return null;
+    }
+    const trimmed = content.trim();
+    console.warn(ING_LOG, 'raw assistant content (first 1500 chars)', trimmed.slice(0, 1500));
+    const parsed = parseJson(trimmed);
+    console.warn(ING_LOG, 'parsed assistant JSON typeof', typeof parsed, parsed && typeof parsed === 'object' ? Object.keys(parsed as object) : []);
+    const panel = parseIngredientAiPanelJson(parsed);
+    if (!panel) {
+      console.warn(ING_LOG, 'structured panel validation failed (see [IngredientsPanel][validate] logs)');
+      return null;
+    }
+    const aiClassified = panel.good.length + panel.neutral.length + panel.redFlags.length;
+    const allRows = [...panel.good, ...panel.neutral, ...panel.redFlags];
+    console.warn(ING_LOG, 'validation OK; using structured panel', {
+      good: panel.good.length,
+      neutral: panel.neutral.length,
+      redFlags: panel.redFlags.length,
+    });
+    console.warn(ING_LOG, 'final structured ingredient names preview', allRows.map((e) => e.name).slice(0, 14));
+    console.warn(
+      ING_LOG,
+      'final structured ingredient notes preview',
+      allRows.map((e) => (e.note.length > 140 ? `${e.note.slice(0, 140)}…` : e.note)).slice(0, 14),
+    );
+    console.warn(ING_LOG, 'counts summary', {
+      cleanedCandidateCount: expected,
+      finalAiClassifiedCount: aiClassified,
+    });
+    return panel;
+  } catch (err) {
+    console.warn(ING_LOG, 'caught error', err);
+    return null;
   }
 }

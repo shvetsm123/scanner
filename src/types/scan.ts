@@ -1,5 +1,18 @@
 export type Verdict = 'good' | 'sometimes' | 'avoid' | 'unknown';
 
+/** Single ingredient line in the Ingredients tab (second AI pass output). */
+export type IngredientPanelEntry = {
+  name: string;
+  note: string;
+};
+
+/** Strict second-pass JSON: grouped by tier. */
+export type IngredientAiPanel = {
+  good: IngredientPanelEntry[];
+  neutral: IngredientPanelEntry[];
+  redFlags: IngredientPanelEntry[];
+};
+
 /** Full evaluation persisted once per scan; UI depth uses current result style only. */
 export type SavedScanResult = {
   id: string;
@@ -14,6 +27,8 @@ export type SavedScanResult = {
   reasons: string[];
   preferenceMatches?: string[];
   whyText?: string;
+  /** “Why this matters” for the General tab (preferred over legacy `whyText`). */
+  whyThisMatters?: string;
   ingredientBreakdown?: string[];
   allergyNotes?: string[];
   parentTakeaway?: string;
@@ -32,8 +47,10 @@ export type SavedScanResult = {
   guidanceContext?: string[];
   /** Raw Open Food Facts `product` object for Supabase `raw_json`. */
   rawJson?: Record<string, unknown>;
-  /** Fingerprint of child age + result style + avoids when this result was produced; used for reuse. */
+  /** Fingerprint of child age + avoids when this result was produced; used for reuse. */
   analysisContextKey?: string;
+  /** Ingredients tab: validated second AI pass output only (no raw OFF strings). */
+  ingredientPanel?: IngredientAiPanel;
 };
 
 export type RecentScan = SavedScanResult;
