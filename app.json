@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "scanner",
-    "slug": "scanner",
+    "name": "mamascan",
+    "slug": "mamascan",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "scanner",
+    "scheme": "mamascan",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mikhail.mamascan"
     },
     "android": {
+      "package": "com.mikhail.mamascan",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -45,12 +47,6 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    },
-    "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "9a1a13f9-92e6-4760-a479-55b919fa848e"
-      }
     }
   }
 }
