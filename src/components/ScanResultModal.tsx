@@ -4,13 +4,22 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { formatIngredientNameForLang, polishIngredientNote } from '../lib/ingredientDisplay';
-import { getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
+import { avoidLabel, getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
 import { localizeResultLine } from '../lib/localizeScanText';
-import type { AvoidPreference, Plan } from '../types/preferences';
+import { AVOID_PREFERENCE_IDS, type AvoidPreference, type Plan } from '../types/preferences';
+import type { AppLanguage } from '../lib/deviceLanguage';
 import type { RecentScan } from '../types/scan';
 import { selectDistinctDisplayReasons } from '../lib/scanResultAntiRepeat';
 import { VerdictBadge } from './VerdictBadge';
 type ResultTab = 'general' | 'ingredients';
+
+function preferenceMatchDisplayLine(line: string, lang: AppLanguage): string {
+  const t0 = line.trim();
+  if ((AVOID_PREFERENCE_IDS as readonly string[]).includes(t0)) {
+    return avoidLabel(t0 as AvoidPreference, lang);
+  }
+  return humanizePreferenceMatchLine(t0, lang);
+}
 
 type RowUi = { key: string; name: string; note: string };
 
@@ -94,6 +103,16 @@ export function ScanResultModal({
   useEffect(() => {
     setTab('general');
   }, [scan?.id]);
+
+  useEffect(() => {
+    if (!visible || !scan) {
+      return;
+    }
+    console.warn('[prefs][ScanResultModal]', 'preferenceMatches received', {
+      scanId: scan.id,
+      preferenceMatches: scan.preferenceMatches ?? [],
+    });
+  }, [visible, scan]);
 
   const preferenceLines = scan?.preferenceMatches?.filter(Boolean) ?? [];
   const showAvoidSection = preferenceLines.length > 0;
@@ -386,7 +405,7 @@ export function ScanResultModal({
                             key={`${line}-${index}`}
                             style={{ fontSize: 14, color: '#5C4A38', lineHeight: 20, fontWeight: '600' }}
                           >
-                            • {locLine(humanizePreferenceMatchLine(line, lang))}
+                            • {locLine(preferenceMatchDisplayLine(line, lang))}
                           </Text>
                         ))}
                       </View>

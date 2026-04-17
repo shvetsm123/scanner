@@ -77,7 +77,7 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
   }
   const baseVerdictStored = isVerdict(o.baseVerdict) ? o.baseVerdict : o.verdict;
   const verdictStored = isVerdict(o.verdict) ? o.verdict : baseVerdictStored;
-  const verdictClamped = clampFinalVerdictToBase(baseVerdictStored, verdictStored);
+  let verdictClamped = clampFinalVerdictToBase(baseVerdictStored, verdictStored);
   const summary = typeof o.summary === 'string' && o.summary.trim() ? o.summary.trim() : null;
   if (!summary) {
     return null;
@@ -107,6 +107,9 @@ export function parseStoredRecentScan(raw: unknown): RecentScan | null {
 
   const categories = Array.isArray(o.categories) ? asTrimmedStringArray(o.categories, 40) : [];
   const preferenceMatchesRaw = asTrimmedStringArray(o.preferenceMatches, 12);
+  if (preferenceMatchesRaw.length > 0) {
+    verdictClamped = clampFinalVerdictToBase(baseVerdictStored, 'avoid');
+  }
 
   const out: RecentScan = {
     id,

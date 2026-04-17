@@ -53,7 +53,7 @@ export function localizeAiResultStrings(ai: AiResult, lang: AppLanguage): AiResu
     ...ai,
     summary: loc(ai.summary),
     reasons: ai.reasons.map(loc),
-    preferenceMatches: ai.preferenceMatches.map(loc),
+    preferenceMatches: ai.preferenceMatches,
     nutritionSnapshot: ai.nutritionSnapshot.map(loc),
     ingredientFlags: ai.ingredientFlags.map(loc),
     ingredientBreakdown: ai.ingredientBreakdown.map(loc),

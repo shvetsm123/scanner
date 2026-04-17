@@ -59,7 +59,9 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
     const age = typeof childAge === 'number' && Number.isFinite(childAge) ? childAge : 4;
     const ruleBasedBaseVerdict = computeRuleBasedBaseVerdict(age, product);
     const aiInput = buildAiInput(childAge, product, avoidPreferences, 'advanced', ruleBasedBaseVerdict, lang);
+    console.warn('[prefs][scan]', 'avoid list used for analysis', avoidPreferences);
     const ai = await evaluateProductWithAi(aiInput);
+    console.warn('[prefs][scan]', 'preferenceMatches returned from analysis', ai.preferenceMatches);
 
     const cleaned = extractCleanOffComposition(product.rawJson, product.ingredientsText, product.productName);
     let ingredientPanel = undefined as RecentScan['ingredientPanel'];
@@ -127,11 +129,16 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
       ingredientPanel,
     };
 
-    if (avoidPreferences.length > 0 && ai.preferenceMatches.length > 0) {
+    if (avoidPreferences.length > 0) {
       scan.preferenceMatches = ai.preferenceMatches;
     }
 
     scan.analysisContextKey = buildScanAnalysisContextKey(scan.barcode, childAge, avoidPreferences);
+
+    console.warn('[prefs][scan]', 'preferenceMatches stored on scan object', {
+      scanId: scan.id,
+      preferenceMatches: scan.preferenceMatches ?? [],
+    });
 
     return { scan, isSuccessfulProductScan: true };
   } catch {

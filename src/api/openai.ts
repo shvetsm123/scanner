@@ -6,10 +6,12 @@ import { buildOfficialGuidanceContextLines } from '../lib/officialGuidanceContex
 import { localizeAiResultStrings } from '../lib/localizeScanText';
 import { OUTPUT_LANGUAGE_NAMES } from '../lib/i18n';
 import { getFallbackAiResult } from '../lib/getFallbackAiResult';
+import { mergePreferenceMatchIds } from '../lib/preferenceMatchInference';
 import { normalizeCanonicalAiPayload } from '../lib/resultStyleHelpers';
 import type { AiResult, IngredientsAiInput, KidsAiInput } from '../types/ai';
 import type { IngredientAiPanel } from '../types/scan';
 import { parseIngredientAiPanelJson } from '../lib/ingredientAiPanel';
+import { clampFinalVerdictToBase } from '../lib/preferenceMatchers';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
@@ -18,7 +20,7 @@ const LOG_PREFIX = '[OpenAI]';
 const SYSTEM_PROMPT = `You write the GENERAL tab of a scan result for ONE packaged food or drink for parents; childAge is in the input. The app shows ingredients separately from Open Food Facts—do not try to list every ingredient in your JSON. Output JSON ONLY. No markdown.
 
 OUTPUT LANGUAGE (mandatory)
-- The user message includes OUTPUT_LANGUAGE. Every natural-language string in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, whyThisMatters, parentTakeaway, guidanceContext) MUST be written entirely in that language.
+- The user message includes OUTPUT_LANGUAGE. Every natural-language string in the JSON (summary, reasons, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, whyThisMatters, parentTakeaway, guidanceContext) MUST be written entirely in that language.
 - Do not mix languages. In non-English outputs, translate nutrition terms (sugar, salt, sodium, saturated fat, energy, kcal, kJ, etc.) into OUTPUT_LANGUAGE.
 - Keep JSON keys in English. Copy product.productName, product.brand, product.barcode verbatim from input.
 
@@ -27,13 +29,14 @@ CORE ORDER
 2) Short, direct child-age interpretation. Not clinical. No filler.
 
 AUTHORITATIVE VERDICTS (non-negotiable)
-- baseVerdict MUST equal ruleBasedBaseVerdict.
-- finalVerdict: if avoidPreferences is empty or nothing matches, finalVerdict MUST equal ruleBasedBaseVerdict. If an avoid clearly matches product text, finalVerdict may be stricter but NEVER more lenient.
+- baseVerdict: your product- and age-only judgment before the parent's avoid list. It MUST NOT be more lenient than ruleBasedBaseVerdict (at least that strict).
+- finalVerdict: must not be more lenient than ruleBasedBaseVerdict. If avoidPreferences is empty or preferenceMatches is empty, finalVerdict should match baseVerdict unless listing facts require a stricter call. If an avoid clearly matches product text, finalVerdict may be stricter but NEVER more lenient than the rule floor.
+- The app forces the user-facing verdict to "avoid" whenever preferenceMatches is non-empty; keep summary and bullets coherent with that outcome when avoids hit.
 - All text fields MUST align with those verdicts.
 
 AVOID PREFERENCES
 - If avoidPreferences is missing or empty: preferenceMatches MUST be [].
-- Otherwise list preferenceMatches only when clearly supported by product text.
+- Otherwise preferenceMatches MUST be an array of strings, each string EXACTLY equal to one id from avoidPreferences in the user JSON (same snake_case token, e.g. added_sugar, soy, high_salt). Only include ids clearly supported by product text (ingredients, allergens, categories, nutriments, name). Never use prose or translated text in preferenceMatches—machine ids only.
 
 DATA HONESTY
 - Never invent grams, allergens, caffeine, or sweeteners. If a number is missing from nutriments, do not state a gram value.
@@ -138,16 +141,39 @@ function getOpenAiChatUrl(): string {
   return OPENAI_CHAT_URL;
 }
 
+function applyAvoidPreferenceMatchesToAiResult(result: AiResult, input: KidsAiInput): AiResult {
+  const hadAvoidPrefs = Array.isArray(input.avoidPreferences) && input.avoidPreferences.length > 0;
+  if (!hadAvoidPrefs) {
+    console.warn(LOG_PREFIX, '[prefs] no avoids — clearing preferenceMatches');
+    return {
+      ...result,
+      preferenceMatches: [],
+      verdict: result.baseVerdict,
+    };
+  }
+  const merged = mergePreferenceMatchIds(result.preferenceMatches, input.product, input.avoidPreferences);
+  console.warn(LOG_PREFIX, '[prefs] preferenceMatches after merge+inference', merged);
+  if (merged.length > 0) {
+    return {
+      ...result,
+      preferenceMatches: merged,
+      verdict: clampFinalVerdictToBase(result.baseVerdict, 'avoid'),
+    };
+  }
+  return { ...result, preferenceMatches: merged };
+}
+
 export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResult> {
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   const keyPresent = typeof apiKey === 'string' && !!apiKey.trim();
   console.warn(LOG_PREFIX, 'EXPO_PUBLIC_OPENAI_API_KEY present:', keyPresent);
+  console.warn(LOG_PREFIX, '[prefs] avoid list for analysis', input.avoidPreferences ?? []);
 
   const ruleBase = input.ruleBasedBaseVerdict;
 
   if (!keyPresent) {
     console.warn(LOG_PREFIX, 'using fallback: missing API key');
-    return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+    return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
   }
 
   const requestUrl = getOpenAiChatUrl();
@@ -168,7 +194,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `OUTPUT_LANGUAGE: ${input.outputLanguage} (${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}). Write 100% of explanatory text in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} only. All natural-language string values in the JSON (summary, reasons, preferenceMatches, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, whyThisMatters, parentTakeaway, guidanceContext) MUST be in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}. Keep JSON keys in English. Keep verbatim from input: product.productName, product.brand, product.barcode. Verdict fields baseVerdict and finalVerdict must remain exactly one of: good, sometimes, avoid, unknown.
+            content: `OUTPUT_LANGUAGE: ${input.outputLanguage} (${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}). Write 100% of explanatory text in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]} only. All natural-language string values in the JSON (summary, reasons, nutritionSnapshot, ingredientFlags, ingredientBreakdown, allergyNotes, whyThisMatters, parentTakeaway, guidanceContext) MUST be in ${OUTPUT_LANGUAGE_NAMES[input.outputLanguage]}. The preferenceMatches array is the ONLY exception: it must contain ONLY exact snake_case ids copied from avoidPreferences (no translated text). Keep JSON keys in English. Keep verbatim from input: product.productName, product.brand, product.barcode. Verdict fields baseVerdict and finalVerdict must remain exactly one of: good, sometimes, avoid, unknown.
 
 Evaluate this input. Reply with JSON only:
 ${JSON.stringify(input)}
@@ -186,7 +212,7 @@ ${GENERAL_DEPTH_INSTRUCTIONS}`,
 
     if (!response.ok) {
       console.warn(LOG_PREFIX, 'using fallback: HTTP not OK, status', response.status);
-      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
 
     let data: { choices?: { message?: { content?: string } }[] };
@@ -194,37 +220,30 @@ ${GENERAL_DEPTH_INSTRUCTIONS}`,
       data = JSON.parse(rawText) as { choices?: { message?: { content?: string } }[] };
     } catch (parseBodyErr) {
       console.warn(LOG_PREFIX, 'using fallback: failed to parse response body as JSON:', parseBodyErr);
-      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
 
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       console.warn(LOG_PREFIX, 'using fallback: missing or empty choices[0].message.content');
-      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
 
     const parsed = parseJson(content.trim());
     const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase, 'advanced');
     if (!evaluation) {
       console.warn(LOG_PREFIX, 'using fallback: evaluation JSON failed validation', { parsed });
-      return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
+    console.warn(LOG_PREFIX, '[prefs] preferenceMatches from model (post-parse)', evaluation.preferenceMatches);
     const localizedEval = localizeAiResultStrings(evaluation, input.outputLanguage);
     const enriched = enrichGuidanceContext(input, localizedEval);
-    const hadAvoidPrefs = Array.isArray(input.avoidPreferences) && input.avoidPreferences.length > 0;
-    if (!hadAvoidPrefs) {
-      return {
-        ...enriched,
-        preferenceMatches: [],
-        verdict: enriched.baseVerdict,
-      };
-    }
-    return enriched;
+    return applyAvoidPreferenceMatchesToAiResult(enriched, input);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(LOG_PREFIX, 'caught error:', message, err);
     console.warn(LOG_PREFIX, 'using fallback after error');
-    return getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage);
+    return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
   }
 }
 

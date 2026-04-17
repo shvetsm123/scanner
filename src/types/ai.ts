@@ -4,13 +4,14 @@ import type { Verdict } from './scan';
 
 /** Single canonical model output per product (same verdict for all display modes). */
 export type AiResult = {
-  /** Verdict from child age + product facts only (ignore avoid list). */
+  /** Product- and age-only judgment (ignore parent avoid list); not more lenient than ruleBasedBaseVerdict. */
   baseVerdict: Verdict;
-  /** Shown verdict after preference conflicts; never more lenient than baseVerdict. */
+  /** User-facing verdict; forced to avoid when preferenceMatches is non-empty. */
   verdict: Verdict;
   summary: string;
   /** Factual bullets (see normalizeCanonicalAiPayload). */
   reasons: string[];
+  /** Avoid-topic ids from the user's list that match the listing (snake_case, e.g. added_sugar). */
   preferenceMatches: string[];
   /** Legacy model field; UI uses OFF-only ingredient tab. */
   ingredientBreakdown: string[];

@@ -249,6 +249,10 @@ export function normalizeCanonicalAiPayload(
   }
   const o = raw as Record<string, unknown>;
 
+  const modelBaseRaw = o.baseVerdict;
+  const modelBase = isVerdict(modelBaseRaw) ? modelBaseRaw : ruleBasedBaseVerdict;
+  const baseVerdict = clampFinalVerdictToBase(ruleBasedBaseVerdict, modelBase);
+
   const finalRaw = o.finalVerdict ?? o.verdict;
   const proposedFinal = isVerdict(finalRaw) ? finalRaw : null;
   if (!proposedFinal) {
@@ -305,7 +309,7 @@ export function normalizeCanonicalAiPayload(
     : [];
 
   return {
-    baseVerdict: ruleBasedBaseVerdict,
+    baseVerdict,
     verdict,
     summary,
     reasons,
