@@ -1,6 +1,6 @@
 import * as Localization from 'expo-localization';
 
-import { evaluateIngredientsWithAi, evaluateProductWithAi } from '../api/openai';
+import { evaluateIngredientsWithAi, evaluateProductWithAi, fetchNormalizedProductByBarcodeWithAi } from '../api/openai';
 import { getProductByBarcode } from '../api/openFoodFacts';
 import { buildAiInput } from './buildAiInput';
 import { serializeChildAgePreferenceForContext } from './childAgeContext';
@@ -14,7 +14,7 @@ import type { RecentScan } from '../types/scan';
 
 export type BuildRecentScanOutcome = {
   scan: RecentScan;
-  /** True when Open Food Facts returned a product and evaluation completed for that product. */
+  /** True when a product was resolved (Open Food Facts or AI barcode lookup) and evaluation completed. */
   isSuccessfulProductScan: boolean;
 };
 
@@ -52,7 +52,10 @@ export async function buildRecentScanFromBarcode(barcode: string): Promise<Build
   const lang = getAppLanguage();
   try {
     const [profile, avoidPreferences] = await Promise.all([getChildAgeProfile(), getAvoidPreferences()]);
-    const product = await getProductByBarcode(barcode);
+    let product = await getProductByBarcode(barcode);
+    if (!product) {
+      product = await fetchNormalizedProductByBarcodeWithAi(barcode);
+    }
     if (!product) {
       return { scan: createFallbackRecentScan(barcode, profile.completedWholeYears, lang), isSuccessfulProductScan: false };
     }

@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { ChildAgeProfile } from '../lib/childAgeContext';
 import type { RecentScan } from '../types/scan';
+import { BARCODE_AI_FALLBACK_SOURCE } from './openFoodFacts';
 
 const url = typeof process.env.EXPO_PUBLIC_SUPABASE_URL === 'string' ? process.env.EXPO_PUBLIC_SUPABASE_URL.trim() : '';
 const anonKey =
@@ -137,7 +138,13 @@ function buildProductUpsertPayload(
   opts: ProductWriteOptions,
 ): Record<string, unknown> {
   const now = new Date().toISOString();
-  const hasOff = scan.rawJson != null;
+  const raw = scan.rawJson;
+  const isAiBarcodeRow =
+    raw != null &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    (raw as Record<string, unknown>)['source'] === BARCODE_AI_FALLBACK_SOURCE;
+  const hasOff = scan.rawJson != null && !isAiBarcodeRow;
   const payload: Record<string, unknown> = {
     barcode,
     product_name: (scan.productName ?? 'Unknown product').trim() || 'Unknown product',

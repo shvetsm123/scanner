@@ -19,6 +19,7 @@ import {
   setAvoidPreferences,
   setChildAge,
   setChildBirthdate,
+  waitUntilPreferencesSyncIdle,
 } from '../src/lib/storage';
 import { AVOID_PREFERENCE_OPTIONS, type AvoidPreference } from '../src/types/preferences';
 
@@ -106,6 +107,7 @@ export default function PreferencesScreen() {
       await setChildAge(p.completedWholeYears);
       await setAvoidPreferences(avoidList);
       await pushSupabasePreferencesFromLocal();
+      await waitUntilPreferencesSyncIdle();
       console.warn('[prefsDebug] onSave after pushSupabasePreferencesFromLocal', 'push completed');
       router.back();
     } finally {

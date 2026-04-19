@@ -33,6 +33,50 @@ const PREF_REMOTE_PULL_SUPPRESS_UNTIL_MS_KEY = 'prefRemotePullSuppressUntil_ms';
 
 export const MAX_RECENT_SCANS = 20;
 
+/** Tracks in-flight remote preference push/pull so scans can wait for a settled profile. */
+let preferencesSyncDepth = 0;
+let preferencesSyncIdleResolver: (() => void) | null = null;
+let preferencesSyncIdlePromise: Promise<void> | null = null;
+
+function beginPreferencesSync(): void {
+  preferencesSyncDepth += 1;
+  if (!preferencesSyncIdlePromise) {
+    preferencesSyncIdlePromise = new Promise<void>((resolve) => {
+      preferencesSyncIdleResolver = resolve;
+    });
+  }
+}
+
+function endPreferencesSync(): void {
+  preferencesSyncDepth = Math.max(0, preferencesSyncDepth - 1);
+  if (preferencesSyncDepth === 0) {
+    preferencesSyncIdleResolver?.();
+    preferencesSyncIdleResolver = null;
+    preferencesSyncIdlePromise = null;
+  }
+}
+
+async function withPreferencesSyncLock(fn: () => Promise<void>): Promise<void> {
+  beginPreferencesSync();
+  try {
+    await fn();
+  } finally {
+    endPreferencesSync();
+  }
+}
+
+/** Resolves when no `syncRemotePreferencesWithLocal` / `pushSupabasePreferencesFromLocal` is running. */
+export async function waitUntilPreferencesSyncIdle(): Promise<void> {
+  const p = preferencesSyncIdlePromise;
+  if (p) {
+    try {
+      await p;
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** Maps stored plan tokens to the current two-tier model (Free | Unlimited). */
 function canonicalizeStoredPlanToken(raw: string | null): Plan | null {
   if (raw == null) {
@@ -183,6 +227,7 @@ export async function syncRemotePreferencesWithLocal(): Promise<void> {
   if (!client) {
     return;
   }
+  await withPreferencesSyncLock(async () => {
   try {
     const deviceId = await getOrCreateDeviceId();
     let profileId = await AsyncStorage.getItem(SUPABASE_PROFILE_ID_KEY);
@@ -238,6 +283,7 @@ export async function syncRemotePreferencesWithLocal(): Promise<void> {
   } catch {
     /* local-first */
   }
+  });
 }
 
 export async function pushSupabasePreferencesFromLocal(): Promise<void> {
@@ -252,6 +298,7 @@ export async function pushSupabasePreferencesFromLocal(): Promise<void> {
   if (!client) {
     return;
   }
+  await withPreferencesSyncLock(async () => {
   try {
     const deviceId = await getOrCreateDeviceId();
     let profileId = await AsyncStorage.getItem(SUPABASE_PROFILE_ID_KEY);
@@ -280,6 +327,7 @@ export async function pushSupabasePreferencesFromLocal(): Promise<void> {
   } catch {
     /* local-first */
   }
+  });
 }
 
 async function clearLegacyRecentScansKeys(): Promise<void> {

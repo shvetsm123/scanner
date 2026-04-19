@@ -42,6 +42,7 @@ import {
   resetAppDataForDev,
   syncRemotePreferencesWithLocal,
   tryPersistSuccessfulScanToSupabase,
+  waitUntilPreferencesSyncIdle,
 } from '../src/lib/storage';
 import {
   addFavorite,
@@ -159,6 +160,8 @@ export default function HomeScreen() {
   const expectingScannerDismissHandoffRef = useRef(false);
   const scannerDismissedForHandoffRef = useRef(false);
   const scannerModalVisibleRef = useRef(false);
+  const hydrateLockRef = useRef(false);
+  const hydrateAgainRef = useRef(false);
   resultModalVisibleRef.current = resultModalVisible;
   scanPipelineLoadingRef.current = scanPipelineLoading;
   scanErrorVisibleRef.current = scanError != null;
@@ -289,28 +292,44 @@ export default function HomeScreen() {
   }, []);
 
   const hydrate = useCallback(async () => {
-    await syncRemotePreferencesWithLocal();
-    const [scans, avoids, daily, profile] = await Promise.all([
-      getRecentScans(),
-      getAvoidPreferences(),
-      getDailySuccessfulScanState(),
-      getChildAgeProfile(),
-    ]);
-    const p = await getPlan();
-    console.warn('[planDebug][home] hydrate', {
-      plan: p,
-      avoids,
-      daily,
-    });
-    setRecentScans(scans);
-    setPlan(p);
-    setAvoidPreferences(avoids);
-    setDailyScanState(daily);
-    setChildAge(Number.isFinite(profile.completedWholeYears) ? profile.completedWholeYears : null);
-    if (p === 'unlimited') {
-      await refreshFavoritesList();
-    } else {
-      setFavoritesList([]);
+    if (hydrateLockRef.current) {
+      hydrateAgainRef.current = true;
+      return;
+    }
+    hydrateLockRef.current = true;
+    try {
+      for (;;) {
+        hydrateAgainRef.current = false;
+        await waitUntilPreferencesSyncIdle();
+        await syncRemotePreferencesWithLocal();
+        const [scans, avoids, daily, profile] = await Promise.all([
+          getRecentScans(),
+          getAvoidPreferences(),
+          getDailySuccessfulScanState(),
+          getChildAgeProfile(),
+        ]);
+        const p = await getPlan();
+        console.warn('[planDebug][home] hydrate', {
+          plan: p,
+          avoids,
+          daily,
+        });
+        setRecentScans(scans);
+        setPlan(p);
+        setAvoidPreferences(avoids);
+        setDailyScanState(daily);
+        setChildAge(Number.isFinite(profile.completedWholeYears) ? profile.completedWholeYears : null);
+        if (p === 'unlimited') {
+          await refreshFavoritesList();
+        } else {
+          setFavoritesList([]);
+        }
+        if (!hydrateAgainRef.current) {
+          break;
+        }
+      }
+    } finally {
+      hydrateLockRef.current = false;
     }
   }, [refreshFavoritesList]);
 
@@ -416,6 +435,8 @@ export default function HomeScreen() {
     setScanError(null);
     setUnknownResultVisible(false);
     setUnknownScan(null);
+    setScanPipelineLoading(false);
+    scanPipelineLoadingRef.current = false;
     isProcessingScanRef.current = false;
   };
 
@@ -466,6 +487,10 @@ export default function HomeScreen() {
       navigatePaywall({ preselect: 'unlimited' });
       return;
     }
+    await waitUntilPreferencesSyncIdle();
+    if (scanPipelineLoadingRef.current || isProcessingScanRef.current) {
+      return;
+    }
     if (cameraPermission && !cameraPermission.granted) {
       const res = await requestCameraPermission();
       if (!res.granted) {
@@ -485,15 +510,22 @@ export default function HomeScreen() {
   };
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
-    if (
+    const scanBlocked = () =>
       !data ||
       isProcessingScanRef.current ||
       resultModalVisibleRef.current ||
       scanPipelineLoadingRef.current ||
       scanErrorVisibleRef.current ||
       unknownResultVisibleRef.current ||
-      expectingScannerDismissHandoffRef.current
-    ) {
+      expectingScannerDismissHandoffRef.current;
+
+    if (scanBlocked()) {
+      return;
+    }
+
+    await waitUntilPreferencesSyncIdle();
+
+    if (scanBlocked()) {
       return;
     }
 
@@ -643,14 +675,22 @@ export default function HomeScreen() {
         if (typeof __DEV__ !== 'undefined' && __DEV__) {
           console.warn('[scanFlow] loading hidden');
         }
+      } else if (pendingPostScanOutcomeRef.current) {
+        queueMicrotask(() => {
+          commitPendingPostScanOutcome();
+        });
       }
     }
   };
 
-  const openManualBarcodeEntry = () => {
+  const openManualBarcodeEntry = async () => {
     if (dailyLimitReached) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       navigatePaywall({ preselect: 'unlimited' });
+      return;
+    }
+    await waitUntilPreferencesSyncIdle();
+    if (scanPipelineLoadingRef.current || isProcessingScanRef.current) {
       return;
     }
     setManualBarcodeError(null);
@@ -664,10 +704,14 @@ export default function HomeScreen() {
     Keyboard.dismiss();
   };
 
-  const submitManualBarcode = () => {
+  const submitManualBarcode = async () => {
     const digits = digitsOnlyFromBarcodeInput(manualBarcodeValue);
     if (!isValidManualBarcodeDigits(digits)) {
       setManualBarcodeError(t('home.manualBarcodeInvalid', getAppLanguage()));
+      return;
+    }
+    await waitUntilPreferencesSyncIdle();
+    if (scanPipelineLoadingRef.current || isProcessingScanRef.current) {
       return;
     }
     setManualBarcodeError(null);

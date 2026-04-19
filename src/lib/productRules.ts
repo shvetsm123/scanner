@@ -1,6 +1,7 @@
 import type { NormalizedProduct } from '../api/openFoodFacts';
 import type { Verdict } from '../types/scan';
 import type { ChildAgeProfile } from './childAgeContext';
+import { resolveDeterministicFormulaStageVerdict } from './formulaStageRules';
 import { verdictStrictness } from './preferenceMatchers';
 
 export type AgeBand = '0_1' | '1_2' | '2_3' | '4_6' | '7_10' | '11_plus';
@@ -288,6 +289,10 @@ export function computeRuleBasedBaseVerdict(input: ProductRulesChildInput, produ
     if (input.infantUnder12 && /\bhoney\b/i.test(c)) {
       return 'avoid';
     }
+    const formulaDet = resolveDeterministicFormulaStageVerdict(input.ageInMonths, product);
+    if (formulaDet !== null) {
+      return formulaDet;
+    }
     if (hasAddedSugarOrClearlySweetened(c) && !isPlainUnsweetenedYogurt(c)) {
       return 'avoid';
     }
@@ -307,6 +312,11 @@ export function computeRuleBasedBaseVerdict(input: ProductRulesChildInput, produ
       return input.infantStrict || input.infant611 ? 'sometimes' : 'good';
     }
     return 'sometimes';
+  }
+
+  const formulaDetOlder = resolveDeterministicFormulaStageVerdict(input.ageInMonths, product);
+  if (formulaDetOlder !== null) {
+    return formulaDetOlder;
   }
 
   let v: Verdict = 'sometimes';

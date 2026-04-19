@@ -11,11 +11,45 @@ import { normalizeCanonicalAiPayload } from '../lib/resultStyleHelpers';
 import type { AiResult, IngredientsAiInput, KidsAiInput } from '../types/ai';
 import type { IngredientAiPanel } from '../types/scan';
 import { parseIngredientAiPanelJson } from '../lib/ingredientAiPanel';
+import { applyDeterministicFormulaStageVerdictPatch } from '../lib/formulaStageRules';
 import { clampFinalVerdictToBase } from '../lib/preferenceMatchers';
+import {
+  normalizeAiBarcodeLookupProductDetailed,
+  type NormalizedProduct,
+} from './openFoodFacts';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const MODEL = 'gpt-4o-mini';
+/** Model for Responses API + built-in web_search tool (barcode research step). */
+const BARCODE_RESPONSES_MODEL = 'gpt-4o-mini';
 const LOG_PREFIX = '[OpenAI]';
+
+const BARCODE_LOOKUP_SYSTEM_PROMPT = `Open Food Facts missed this barcode. You MUST call web_search before answering (no memory-only answers).
+
+Return ONE tiny JSON object only—no markdown, no prose, no code fences. Prefer under ~800 characters total.
+
+Either: {"product":null}
+
+Or the ONLY accepted success shape (copy field names and nesting exactly):
+
+{"product":{"barcode":"<same GTIN as input>","productName":"<short name>","brand":"<brand or null>","imageUrl":null,"ingredientsText":"<short text or null>","categories":["slug"],"allergensText":"<short text or null>","nutriments":null,"rawJson":{"source":"barcode_ai_fallback","confidence":"high","matchedSources":["https://..."]}}}
+
+Use "confidence":"medium" when appropriate instead of "high". Never use "low" on a non-null product—return {"product":null} instead.
+
+CRITICAL — rawJson.source (validator is strict)
+- rawJson.source MUST be EXACTLY the string: barcode_ai_fallback (one literal, no spaces, no variants).
+- NEVER set rawJson.source to "web", "internet", "search", "openai", "tool", or any other value. Those will fail validation.
+- Web search is only how you gather evidence; it is NOT the value of source.
+
+rawJson MUST contain ONLY these three keys: source, confidence, matchedSources. No notes, no extra keys.
+
+SIZE RULES (long replies get cut off mid-JSON)
+- Keep productName, brand, ingredientsText, categories, matchedSources very short.
+- imageUrl: null unless you have a short https URL from a page you used.
+- nutriments: null in almost all cases.
+
+Never invent data. No verdicts or parenting text.`;
 
 const SYSTEM_PROMPT = `You write the GENERAL tab of a scan result for ONE packaged food or drink for parents. The input includes childAge (whole completed years), childAgeProfile (date-of-birth–derived: ageInMonths, ageInYears, ageDisplayLabel like "8 months" or "1 year 4 months", ageBucket, isUnder24Months), and listing fields. Prefer childAgeProfile.ageDisplayLabel and month context when isUnder24Months is true—month-level differences matter for babies. The app shows ingredients separately from Open Food Facts—do not try to list every ingredient in your JSON. Output JSON ONLY. No markdown.
 
@@ -44,11 +78,39 @@ DATA HONESTY
 
 AGE + PRODUCT TYPE
 - Frame by the child's age using childAgeProfile (especially ageDisplayLabel, ageInMonths, isUnder24Months) plus childAge when helpful, using listing support only (categories, name, ingredients, nutriments).
-- Infer product type only when supported (yogurt, dessert, snack, drink, cereal, etc.).
+- Infer product type only when supported (yogurt, dessert, snack, drink, cereal, infant/follow-on formula, growing-up milk, etc.).
+
+FORMULA / FOLLOW-ON / STAGE MILK (critical framing — read when listing looks like infant or follow-on nutrition)
+DETECT from productName, brand, categories, ingredients_text (any language) when the product reads as:
+- infant formula, follow-on / continuation formula, growing-up milk, toddler milk drink, "stage" or "step" 1/2/3/4, "PRE", "HA", "Premium+ 1/2/3", "NAN", "Nutrilon", "Aptamil", "Hipp", "Friso", "Similac", "Enfamil", "SMA", "Bebelac", "Kabrita", "milk-based nutrition" for babies, folgemilch / anfangsmilch / lait infantile / fórmula infantil / детско мляко / адаптирано мляко / etc.
+
+CLASSIFY SKU STAGE (listing only; infer conservatively from name + categories + on-pack style wording)
+- Rough buckets: (A) first / starting / infant / PRE / stage 1 / 0–6 month positioning; (B) follow-on / continuation / stage 2 / "Premium+ 2" style / 6–12 month positioning; (C) growing-up / toddler / stage 3+ / 12+ month positioning. A digit in the product name often marks stage—treat as evidence, not proof, unless categories/text support it.
+
+LACTOSE / MILK BASE (formula)
+- Lactose naturally present in milk-based formula is NOT "added sugar" and must not be described as a sweetened or sugary product on that basis alone.
+- Skim milk powder, whey, milk protein: expected carriers in this category—secondary context unless avoidPreferences implicate dairy/soy or the listing shows a distinct allergy story.
+
+THREE-WAY AGE-STAGE RELATION (pick one; it must drive summary order and verdict tone; use childAgeProfile.ageInMonths as primary for babies)
+1) WRONG STAGE (too advanced for baby): Listing is follow-on / stage-2 / 6–12 month style BUT childAgeProfile.ageInMonths is under 6 (0–5 inclusive). Verdict: clearly negative age-fit (baseVerdict at least as strict as ruleBasedBaseVerdict—typically avoid or sometimes with unmistakable wrong-stage wording, never "good" as a routine choice). Lead with wrong feeding stage / product band is ahead of this month age—not milk/soy unless avoids require.
+2) STAGE-ALIGNED: Same follow-on / stage-2 style AND ageInMonths is 6–12 inclusive. Lead with stage/month band fit: this is intended for the follow-on window and is broadly aligned with that stage—use direct, confident wording (e.g. fits the usual follow-on age band; intended for babies around this stage). Do NOT open with milk/soy/lactose as a problem. Do NOT imply unsuitability from allergens alone when avoidPreferences is empty. Do NOT use weak "may not be suitable" tied only to dairy/soy presence.
+3) OLDER THAN TARGET STAGE: Follow-on / stage-2 (or younger-band SKU) while child is 12+ completed months OR clearly past the label's month band on a normal varied diet. PRIMARY story: not necessary as an everyday default / designed for an earlier feeding phase—still not "dangerous" and not a milk/soy headline when avoidPreferences is empty. Same ordering as before: stage + necessity before routine dairy/soy.
+
+WHEN formula-like pattern matches AND case (3) applies (healthy older toddler or child past label band):
+- PRIMARY story: feeding STAGE vs child's age, everyday appropriateness, whether parents still need this as a default drink—not milk/soy as a worry headline.
+- Redundancy vs family foods—not dairy protein as automatic danger without allergy context.
+- Do NOT frame as "concerning because it contains milk/soy" with empty avoids.
+
+ALLERGEN / MILK / SOY depth when avoidPreferences is missing or empty (or no matching dairy/soy avoid): keep milk/soy/lactose brief and secondary everywhere; stage-fit and necessity first.
+When avoidPreferences includes dairy/soy (or preferenceMatches will): those topics may rank higher; stay coherent with verdict rules.
+allergyNotes: for formula-like + empty avoids, prefer [] unless allergen text adds something beyond ordinary milk protein for this type (rare).
+ingredientFlags: prefer stage/type/real added sugars or processing flags over generic "contains milk" when avoids are empty.
 
 BANNED PHRASING (do not use, even rephrased)
-- "Can be enjoyed in moderation", "not ideal", "age-appropriate", "in moderation", "everything in balance" style hedging.
-- Weak modal hedges used instead of a clear call: "may not be suitable", "may pose a risk", "may not provide", "might not provide", "might not be ideal"—replace with concrete listing-based wording.
+- "Can be enjoyed in moderation", "not ideal", "in moderation", "everything in balance" style empty hedging.
+- Weak modal hedges as a substitute for a clear fact: "may pose a risk", "may not provide", "might not provide", "might not be ideal"—replace with listing-based wording.
+- Do not use vague "age-appropriate" as filler for unrelated snacks; for case (2) stage-aligned formula you SHOULD use concrete stage-fit language (allowed examples: intended for the follow-on month range; fits the usual stage for this age)—not generic hedging.
+- Exception for case (3): clear wording like "designed for an earlier feeding stage", "not the usual everyday choice at this age", "redundant vs varied family foods" is encouraged—still avoid empty "may not be suitable" with no stage fact.
 
 PREFERRED TONE (examples only—do not copy)
 - "Too sugary for a strong everyday pick."
@@ -59,7 +121,8 @@ SUMMARY (one sentence)
 - One short, strong sentence—verdict-aligned, age-aware, not watery. Must sound different from every reasons bullet.
 
 REASONS (factual bullets; exact count in user message)
-- Direct factual lines from nutriments, allergens, categories, ingredient-derived signals, product type. Each bullet must add a new fact vs summary and vs preferenceMatches (no second sugar-only bullet if sugar is already the avoid story—use salt, sat fat, type, processing, list signals, allergens, etc.).
+- Direct factual lines from nutriments, allergens, categories, ingredient-derived signals, product type. Each bullet must add a new fact vs summary and vs preferenceMatches (no second sugar-only bullet if sugar is already the avoid story—use salt, sat fat, type, processing, list signals, etc.).
+- When the product matches the FORMULA / FOLLOW-ON section: order bullets by the three-way relation—wrong stage (too early baby on follow-on) vs stage-aligned vs older than target stage—before routine milk/soy lines unless avoidPreferences forces dairy/soy to the front.
 - NO repeated numbers rule: each numeric fact (same value + same unit context, e.g. the same sugar g/100 g line) appears at most once across summary, reasons, whyThisMatters, and parentTakeaway. If you state sugar as 12 g/100 g in one bullet, do not repeat that number in whyThisMatters or parentTakeaway or summary.
 
 whyThisMatters (one short paragraph, 12–320 characters)
@@ -100,10 +163,11 @@ CANONICAL OUTPUT (always include every key; arrays may be empty)
   "guidanceContext": string[]
 }
 
-Never infer cow's milk / dairy from yogurt alone; mention milk/dairy only when explicit in text or allergens.`;
+Never infer cow's milk / dairy from yogurt alone; mention milk/dairy only when explicit in text or allergens.
+- Exception: named infant/follow-on formula products list milk protein by design—that is expected category context; do not use it as the primary scare angle for an older healthy toddler when avoidPreferences is empty.`;
 
 const GENERAL_DEPTH_INSTRUCTIONS = `REQUIRED COUNTS FOR THIS REQUEST:
-- reasons: 4 to 6 strings, each 8–200 characters, all distinct factual points. Ground every line in nutriments, allergens, categories, or ingredient_text signals (product type, added sugar signals, sweeteners, palm oil, flavorings, caffeine, processing hints)—only with listing support.
+- reasons: 4 to 6 strings, each 8–200 characters, all distinct factual points. Ground every line in nutriments, allergens, categories, or ingredient_text signals (product type, added sugar signals, sweeteners, palm oil, flavorings, caffeine, processing hints)—only with listing support. For formula-like products, first bullets must reflect the three-way stage relation (wrong stage vs aligned vs older than target); never open with milk/soy/lactose-as-sugar when avoids are empty; if the child is past the SKU's target band, at least the first one or two bullets must name stage/age/necessity (not milk/soy as the opener) unless avoidPreferences requires dairy/soy first.
 - nutritionSnapshot: include useful per-100g lines from nutriments ONLY if those exact numbers are not already stated in reasons (avoid duplicate numbers).
 - ingredientFlags: up to 12 distinct flags when the listing supports them; [] is fine if thin.
 - ingredientBreakdown: MUST be [].
@@ -117,16 +181,23 @@ const INFANT_UNDER12_SYSTEM_SUPPLEMENT = `
 YOUNG BABY MODE (childAgeProfile.ageInMonths is 0–11 inclusive)
 - This is a baby under 12 months—not a toddler. Be noticeably firmer, clearer, and more decisive than for 12–23 month children, while staying 100% grounded in the listing.
 - Age bands within this mode: 0–5 completed months are the strictest (earliest milk/complementary feeding context). 6–11 completed months are still very conservative: sweetened flavored processed products, dessert-style yogurts, sodas/juice-drink positioning, and obvious snack/candy/bakery framing are especially poor fits unless the listing clearly reads as a simple, appropriate early food.
-- REASON ORDER: Put the strongest listing-backed concerns first in \`reasons\`. Typical priority (skip what does not apply; never invent):
+- FORMULA / FOLLOW-ON OVERRIDE (always check before snack/sugar heuristics): If the listing is formula-like (see main FORMULA section), age-stage fit overrides generic “processed” worry.
+  • 0–5 months + follow-on / stage-2 / 6–12 month style SKU: WRONG STAGE—verdict and first bullets must center on too advanced a feeding stage for this month age; do not pivot the main story to milk/soy/lactose or treat lactose as added sugar.
+  • 6–11 months + same follow-on / stage-2 style SKU: STAGE-ALIGNED—open with band/stage fit (broadly appropriate for the follow-on window). Do not use weak “may not be suitable” because of milk ingredients. Do not treat lactose or milk powder as a sugar problem by itself. Keep allergens minimal unless avoidPreferences hit.
+  • First / stage-1 style SKU for 6–11 months: may be “earlier-stage” vs month age—explain with stage fit, not milk-as-threat unless avoids require.
+- REASON ORDER (non-formula or after formula stage relation is set): Put the strongest listing-backed concerns first in \`reasons\`. Typical priority (skip what does not apply; never invent):
   (A1) Added sugar / clearly sweetened listing / sweetened flavored processed profile.
   (A2) Dessert, sweet treat, soda/juice-drink style, snack/candy/biscuit/chocolate positioning, or a clear mismatch with “simple infant-stage food” from name/categories/ingredients.
   (A3) Heavily engineered profile when the text supports it (e.g. several emulsifiers/stabilizers/preservatives/flavorings named—count only what appears).
-  (B) Allergen or soy/dairy complexity only when clearly in the listing.
+  (B) If the listing is stage-specific formula and the override above did not already fix order: stage vs childAgeProfile.ageInMonths (too early / too late for this SKU) before generic milk/soy worry when avoids are empty.
+  (B) Allergen or soy/dairy complexity only when clearly in the listing and relevant (or when parent avoids hit).
   (B) Category or product-type mismatch for this age.
   Weaker points last.
+- FORMULA: For babies inside the labelled stage window for that SKU, judge from listing + age; do not open with "contains milk" when avoidPreferences is empty—milk base is normal for this product class.
 - BANNED vague hedging for this baby age: do not use (even translated equivalents of) phrases like “may not be suitable”, “may pose a risk”, “may not provide”, “might not provide”, “might not be ideal”, “not the best option” as a substitute for a clear judgment. Say what the listing shows in direct language parents can act on.
+- Exception: for stage-aligned follow-on (6–11 months) per FORMULA OVERRIDE, prefer firm factual stage-fit lines (“intended for the follow-on month range”, “matches this stage”) over empty modals—those positive stage lines are not “vague hedging.”
 - FORBIDDEN unsupported claims: do not say the product “does not provide necessary nutrients” or similar broad deficiency claims unless the listing makes that gap obvious (e.g. clearly a confection with no meaningful staples). Prefer safer, still-strong lines like “This reads as a flavored processed product, not a simple first-food option” when name/categories/ingredients support that.
-- SUMMARY: One sentence that states the MAIN issue (sugar / wrong product type / sweetened processed yogurt or drink / snack vs infant food)—decisive, not watery, and different from every reasons bullet.
+- SUMMARY: One sentence that states the MAIN issue (sugar / wrong product type / sweetened processed yogurt or drink / snack vs infant food / wrong formula stage vs month age when applicable)—decisive, not watery, and different from every reasons bullet.
 - whyThisMatters: One short paragraph on the practical issue for babies this young (simpler foods; early palate; unnecessary sweets; wrong product category)—no numeric repeat of reasons, no invented nutrition gaps.
 - Tone examples (translate fully to OUTPUT_LANGUAGE; do not copy verbatim): “Added sugar alone is enough to pass on this for a baby this young.” / “This is too early for a product like this.” / “This is a processed flavored product, not a simple infant food.” / “For a baby this age, this is a weak and unnecessary choice.” Stay factual—do not use “poison”/“toxic” unless the listing justifies extreme language (rare).
 - Still obey verdict rules vs ruleBasedBaseVerdict and avoid-list behavior unchanged.`;
@@ -146,7 +217,7 @@ function buildGeneralSystemPrompt(input: KidsAiInput): string {
 function buildGeneralDepthInstructions(input: KidsAiInput): string {
   if (childAgeMonthsIsUnder12(input.childAgeProfile)) {
     return `REQUIRED COUNTS FOR THIS REQUEST (young baby under 12 months — use strict priority ordering):
-- reasons: 5 to 6 strings, each 8–200 characters, all distinct factual points. Order bullets by strength: first the clearest stop signals the listing supports (added sugar / sweetened processed / dessert or snack positioning / wrong product type for this age / visible additive stack when real), then allergen/category points, then milder points last. No second bullet that only repeats the same sugar story.
+- reasons: 5 to 6 strings, each 8–200 characters, all distinct factual points. Order bullets by strength: first the clearest stop signals the listing supports (for formula-like: wrong stage too early before anything else; for follow-on on a 6–11 month baby, stage-alignment before sugar heuristics; added sugar / sweetened processed / dessert or snack positioning / wrong product type for this age / older-than-stage necessity when applicable / visible additive stack when real), then allergen/category points only when they add distinct value, then milder points last. No second bullet that only repeats the same sugar story. For stage-labelled formula with empty avoids, do not lead with milk/soy or lactose as sugar; milk/soy presence alone is never the opener.
 - nutritionSnapshot: include useful per-100g lines from nutriments ONLY if those exact numbers are not already stated in reasons (avoid duplicate numbers).
 - ingredientFlags: up to 12 distinct flags when the listing supports them; [] is fine if thin.
 - ingredientBreakdown: MUST be [].
@@ -187,6 +258,13 @@ function getOpenAiChatUrl(): string {
   return OPENAI_CHAT_URL;
 }
 
+function getOpenAiResponsesUrl(): string {
+  if (Platform.OS === 'web' && typeof __DEV__ !== 'undefined' && __DEV__) {
+    return '/__openai/v1/responses';
+  }
+  return OPENAI_RESPONSES_URL;
+}
+
 function applyAvoidPreferenceMatchesToAiResult(result: AiResult, input: KidsAiInput): AiResult {
   const hadAvoidPrefs = Array.isArray(input.avoidPreferences) && input.avoidPreferences.length > 0;
   if (!hadAvoidPrefs) {
@@ -209,6 +287,11 @@ function applyAvoidPreferenceMatchesToAiResult(result: AiResult, input: KidsAiIn
   return { ...result, preferenceMatches: merged };
 }
 
+function finalizeKidsEvaluationWithPreferences(result: AiResult, input: KidsAiInput): AiResult {
+  const merged = applyAvoidPreferenceMatchesToAiResult(result, input);
+  return applyDeterministicFormulaStageVerdictPatch(input.childAgeProfile.ageInMonths, input.product, merged);
+}
+
 export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResult> {
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   const keyPresent = typeof apiKey === 'string' && !!apiKey.trim();
@@ -219,7 +302,7 @@ export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResul
 
   if (!keyPresent) {
     console.warn(LOG_PREFIX, 'using fallback: missing API key');
-    return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
+    return finalizeKidsEvaluationWithPreferences(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
   }
 
   const requestUrl = getOpenAiChatUrl();
@@ -258,7 +341,7 @@ ${buildGeneralDepthInstructions(input)}`,
 
     if (!response.ok) {
       console.warn(LOG_PREFIX, 'using fallback: HTTP not OK, status', response.status);
-      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
+      return finalizeKidsEvaluationWithPreferences(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
 
     let data: { choices?: { message?: { content?: string } }[] };
@@ -266,31 +349,432 @@ ${buildGeneralDepthInstructions(input)}`,
       data = JSON.parse(rawText) as { choices?: { message?: { content?: string } }[] };
     } catch (parseBodyErr) {
       console.warn(LOG_PREFIX, 'using fallback: failed to parse response body as JSON:', parseBodyErr);
-      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
+      return finalizeKidsEvaluationWithPreferences(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
 
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       console.warn(LOG_PREFIX, 'using fallback: missing or empty choices[0].message.content');
-      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
+      return finalizeKidsEvaluationWithPreferences(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
 
     const parsed = parseJson(content.trim());
     const evaluation = normalizeCanonicalAiPayload(parsed, ruleBase, 'advanced');
     if (!evaluation) {
       console.warn(LOG_PREFIX, 'using fallback: evaluation JSON failed validation', { parsed });
-      return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
+      return finalizeKidsEvaluationWithPreferences(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
     }
     console.warn(LOG_PREFIX, '[prefs] preferenceMatches from model (post-parse)', evaluation.preferenceMatches);
     const localizedEval = localizeAiResultStrings(evaluation, input.outputLanguage);
     const enriched = enrichGuidanceContext(input, localizedEval);
-    return applyAvoidPreferenceMatchesToAiResult(enriched, input);
+    return finalizeKidsEvaluationWithPreferences(enriched, input);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(LOG_PREFIX, 'caught error:', message, err);
     console.warn(LOG_PREFIX, 'using fallback after error');
-    return applyAvoidPreferenceMatchesToAiResult(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
+    return finalizeKidsEvaluationWithPreferences(getFallbackAiResult(ruleBase, 'advanced', input.outputLanguage), input);
   }
+}
+
+type BarcodeLookupExtract =
+  | { kind: 'miss' }
+  | { kind: 'invalid' }
+  | { kind: 'payload'; value: unknown };
+
+function extractBarcodeLookupProduct(parsed: unknown): BarcodeLookupExtract {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { kind: 'invalid' };
+  }
+  if (!('product' in parsed)) {
+    return { kind: 'invalid' };
+  }
+  const p = (parsed as { product: unknown }).product;
+  if (p === null) {
+    return { kind: 'miss' };
+  }
+  return { kind: 'payload', value: p };
+}
+
+function stripAssistantJsonFences(text: string): string {
+  let t = text.trim();
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  }
+  return t;
+}
+
+function stripTrailingCommasJsonish(s: string): string {
+  let out = s;
+  let prev = '';
+  while (out !== prev) {
+    prev = out;
+    out = out.replace(/,(\s*[}\]])/g, '$1');
+  }
+  return out;
+}
+
+/** Rough brace depth ignoring braces inside JSON strings (best-effort for truncated outputs). */
+function balanceUnclosedBraces(s: string): string {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i]!;
+    if (inStr) {
+      if (esc) {
+        esc = false;
+      } else if (c === '\\') {
+        esc = true;
+      } else if (c === '"') {
+        inStr = false;
+      }
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === '{') {
+      depth += 1;
+    } else if (c === '}') {
+      depth = Math.max(0, depth - 1);
+    }
+  }
+  if (depth <= 0) {
+    return s;
+  }
+  return s + '}'.repeat(depth);
+}
+
+/**
+ * If assistant JSON is truncated/malformed, try minimal safe repairs before parse.
+ */
+function prepareBarcodeAssistantJsonForParse(raw: string): { text: string; repairAttempted: boolean } {
+  let text = stripAssistantJsonFences(raw.trim());
+  const tryParse = (t: string): unknown | null => {
+    try {
+      return JSON.parse(t) as unknown;
+    } catch {
+      return null;
+    }
+  };
+  if (tryParse(text) !== null) {
+    return { text, repairAttempted: false };
+  }
+
+  const i0 = text.indexOf('{');
+  const i1 = text.lastIndexOf('}');
+  if (i0 !== -1 && i1 > i0) {
+    text = text.slice(i0, i1 + 1);
+  }
+  text = stripTrailingCommasJsonish(text);
+  if (tryParse(text) !== null) {
+    return { text, repairAttempted: true };
+  }
+
+  const balanced = stripTrailingCommasJsonish(balanceUnclosedBraces(text));
+  if (tryParse(balanced) !== null) {
+    return { text: balanced, repairAttempted: true };
+  }
+
+  return { text: balanced, repairAttempted: true };
+}
+
+function isResponsesApiCompleted(data: unknown): boolean {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+  const d = data as Record<string, unknown>;
+  if (d.status !== 'completed') {
+    return false;
+  }
+  if (d.error != null) {
+    return false;
+  }
+  return true;
+}
+
+function responseOutputHasRefusal(data: unknown): boolean {
+  const out = (data as Record<string, unknown>)?.output;
+  if (!Array.isArray(out)) {
+    return false;
+  }
+  for (const item of out) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    if ((item as Record<string, unknown>).type !== 'message') {
+      continue;
+    }
+    const content = (item as Record<string, unknown>).content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const part of content) {
+      if (part && typeof part === 'object' && (part as Record<string, unknown>).type === 'refusal') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function extractResponsesOutputJsonText(data: unknown): string | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  const d = data as Record<string, unknown>;
+  if (typeof d.output_text === 'string' && d.output_text.trim()) {
+    return stripAssistantJsonFences(d.output_text);
+  }
+  const out = d.output;
+  if (!Array.isArray(out)) {
+    return null;
+  }
+  const chunks: string[] = [];
+  for (const item of out) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    if ((item as Record<string, unknown>).type !== 'message') {
+      continue;
+    }
+    const content = (item as Record<string, unknown>).content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const part of content) {
+      if (!part || typeof part !== 'object') {
+        continue;
+      }
+      const p = part as Record<string, unknown>;
+      if (p.type === 'refusal') {
+        return null;
+      }
+      if (p.type === 'output_text' && typeof p.text === 'string' && p.text.trim()) {
+        chunks.push(p.text.trim());
+      }
+    }
+  }
+  if (chunks.length === 0) {
+    return null;
+  }
+  return stripAssistantJsonFences(chunks.join('\n'));
+}
+
+function collectUrlCitationStrings(data: unknown): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const push = (u: unknown) => {
+    if (typeof u !== 'string' || !u.trim()) {
+      return;
+    }
+    const t = u.trim();
+    if (seen.has(t)) {
+      return;
+    }
+    seen.add(t);
+    urls.push(t);
+  };
+
+  const out = (data as Record<string, unknown>)?.output;
+  if (!Array.isArray(out)) {
+    return urls;
+  }
+  for (const item of out) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    if ((item as Record<string, unknown>).type !== 'message') {
+      continue;
+    }
+    const content = (item as Record<string, unknown>).content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const part of content) {
+      if (!part || typeof part !== 'object') {
+        continue;
+      }
+      const p = part as Record<string, unknown>;
+      if (p.type !== 'output_text' || !Array.isArray(p.annotations)) {
+        continue;
+      }
+      for (const ann of p.annotations) {
+        if (!ann || typeof ann !== 'object') {
+          continue;
+        }
+        const a = ann as Record<string, unknown>;
+        if (a.type === 'url_citation' && typeof a.url === 'string') {
+          push(a.url);
+        }
+      }
+    }
+  }
+  return urls;
+}
+
+function mergeCitationUrlsIntoProductPayload(productPayload: unknown, citationUrls: string[]): unknown {
+  if (!productPayload || typeof productPayload !== 'object' || Array.isArray(productPayload)) {
+    return productPayload;
+  }
+  const o = { ...(productPayload as Record<string, unknown>) };
+  const rj = o.rawJson;
+  if (!rj || typeof rj !== 'object' || Array.isArray(rj)) {
+    return o;
+  }
+  const meta = { ...(rj as Record<string, unknown>) };
+  const existing = Array.isArray(meta.matchedSources)
+    ? meta.matchedSources.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.trim())
+    : [];
+  if (existing.length === 0 && citationUrls.length > 0) {
+    meta.matchedSources = citationUrls.slice(0, 25);
+    return { ...o, rawJson: meta };
+  }
+  return o;
+}
+
+/**
+ * OFF miss only: OpenAI Responses API with web_search tool → raw `NormalizedProduct` or null.
+ * Does not run `evaluateProductWithAi` — caller uses `buildAiInput` + `evaluateProductWithAi` after success.
+ */
+export async function fetchNormalizedProductByBarcodeWithAi(barcode: string): Promise<NormalizedProduct | null> {
+  const code = barcode.trim();
+  if (!code) {
+    return null;
+  }
+
+  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+  if (typeof apiKey !== 'string' || !apiKey.trim()) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] skip: missing API key');
+    return null;
+  }
+
+  const requestUrl = getOpenAiResponsesUrl();
+  const userContent = `BARCODE:${code}
+
+One line JSON only. Key "product" only.`;
+
+  let rawText: string;
+  try {
+    const response = await expoFetch(requestUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: BARCODE_RESPONSES_MODEL,
+        instructions: BARCODE_LOOKUP_SYSTEM_PROMPT,
+        input: userContent,
+        tools: [{ type: 'web_search' }],
+        tool_choice: 'required',
+        temperature: 0.1,
+        max_output_tokens: 8192,
+      }),
+    });
+    rawText = await response.text();
+    if (!response.ok) {
+      console.warn(LOG_PREFIX, '[barcodeLookup] Responses HTTP not OK', response.status, rawText.slice(0, 800));
+      return null;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(LOG_PREFIX, '[barcodeLookup] network error', message);
+    return null;
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(rawText) as unknown;
+  } catch (e) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] response body is not JSON', e);
+    return null;
+  }
+
+  if (!isResponsesApiCompleted(data)) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] response not completed', data);
+    return null;
+  }
+  if (responseOutputHasRefusal(data)) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] model refusal in output');
+    return null;
+  }
+
+  const jsonText = extractResponsesOutputJsonText(data);
+  if (!jsonText) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] no assistant output_text');
+    return null;
+  }
+
+  const rawPreviewMax = 12000;
+  console.warn(
+    LOG_PREFIX,
+    '[barcodeLookup] raw assistant text (before JSON.parse)',
+    jsonText.length > rawPreviewMax
+      ? `${jsonText.slice(0, rawPreviewMax)}… [truncated, totalLen=${jsonText.length}]`
+      : jsonText,
+  );
+
+  const prepared = prepareBarcodeAssistantJsonForParse(jsonText);
+  if (prepared.repairAttempted) {
+    const pMax = 12000;
+    console.warn(
+      LOG_PREFIX,
+      '[barcodeLookup] repaired assistant text (before final JSON.parse)',
+      prepared.text.length > pMax ? `${prepared.text.slice(0, pMax)}… [truncated, totalLen=${prepared.text.length}]` : prepared.text,
+    );
+  }
+
+  const parsed = parseJson(prepared.text);
+  if (parsed === null) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] parsed JSON: parse failed after repair (invalid JSON)');
+    return null;
+  }
+  try {
+    console.warn(LOG_PREFIX, '[barcodeLookup] parsed JSON object', JSON.stringify(parsed));
+  } catch (e) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] parsed JSON object (stringify failed)', parsed, e);
+  }
+
+  const extracted = extractBarcodeLookupProduct(parsed);
+  if (extracted.kind === 'miss') {
+    console.warn(LOG_PREFIX, '[barcodeLookup] explicit product null');
+    return null;
+  }
+  if (extracted.kind === 'invalid') {
+    console.warn(LOG_PREFIX, '[barcodeLookup] invalid product wrapper (missing or non-object "product" key)', {
+      parsed,
+      topLevelKeys: parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.keys(parsed as object) : [],
+    });
+    return null;
+  }
+
+  const citationUrls = collectUrlCitationStrings(data);
+  const mergedPayload = mergeCitationUrlsIntoProductPayload(extracted.value, citationUrls);
+  try {
+    console.warn(
+      LOG_PREFIX,
+      '[barcodeLookup] normalized candidate object (merged payload, before validation)',
+      JSON.stringify(mergedPayload),
+    );
+  } catch (e) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] normalized candidate object (stringify failed)', mergedPayload, e);
+  }
+
+  const normResult = normalizeAiBarcodeLookupProductDetailed(code, mergedPayload);
+  if (!normResult.ok) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] validation rejected payload — reasons:', normResult.reasons);
+    return null;
+  }
+  const normalized = normResult.product;
+  try {
+    console.warn(LOG_PREFIX, '[barcodeLookup] validated NormalizedProduct (post-validation)', JSON.stringify(normalized));
+  } catch (e) {
+    console.warn(LOG_PREFIX, '[barcodeLookup] validated NormalizedProduct (stringify failed)', normalized, e);
+  }
+  console.warn(LOG_PREFIX, '[barcodeLookup] resolved', normalized.productName);
+  return normalized;
 }
 
 const ING_LOG = '[OpenAI][Ingredients]';
