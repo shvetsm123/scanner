@@ -1,6 +1,6 @@
 import type { NormalizedProduct } from '../api/openFoodFacts';
 import type { Verdict } from '../types/scan';
-import type { ChildAgeProfile } from './childAgeContext';
+import type { AgeBucketId, ChildAgeProfile } from './childAgeContext';
 import { resolveDeterministicFormulaStageVerdict } from './formulaStageRules';
 import { verdictStrictness } from './preferenceMatchers';
 
@@ -77,6 +77,7 @@ export function getAgeBand(childAge: number): AgeBand {
 /** Rule engine input: month-precise when `ageInMonths` is set, else legacy integer years. */
 export type ProductRulesChildInput = {
   ageInMonths: number | null;
+  ageBucket: AgeBucketId;
   legacyYearsInt: number | null;
   /** Floored whole years (0 for infants under 1). */
   completedWholeYearsApprox: number;
@@ -96,6 +97,7 @@ export function productRulesChildInputFromProfile(profile: ChildAgeProfile): Pro
   const infant611 = m != null && m >= 6 && m <= 11;
   return {
     ageInMonths: profile.ageInMonths,
+    ageBucket: profile.ageBucket,
     legacyYearsInt,
     completedWholeYearsApprox: profile.completedWholeYears,
     infantStrict,
@@ -289,7 +291,7 @@ export function computeRuleBasedBaseVerdict(input: ProductRulesChildInput, produ
     if (input.infantUnder12 && /\bhoney\b/i.test(c)) {
       return 'avoid';
     }
-    const formulaDet = resolveDeterministicFormulaStageVerdict(input.ageInMonths, product);
+    const formulaDet = resolveDeterministicFormulaStageVerdict(input.ageInMonths, input.ageBucket, product);
     if (formulaDet !== null) {
       return formulaDet;
     }
@@ -314,7 +316,7 @@ export function computeRuleBasedBaseVerdict(input: ProductRulesChildInput, produ
     return 'sometimes';
   }
 
-  const formulaDetOlder = resolveDeterministicFormulaStageVerdict(input.ageInMonths, product);
+  const formulaDetOlder = resolveDeterministicFormulaStageVerdict(input.ageInMonths, input.ageBucket, product);
   if (formulaDetOlder !== null) {
     return formulaDetOlder;
   }

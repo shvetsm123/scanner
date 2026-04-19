@@ -464,36 +464,6 @@ export function ScanResultModal({
                         />
                       </>
                     )}
-                    {ingredientPack.kind === 'structured' && scan?.allergensText?.trim() ? (
-                      <View
-                        style={{
-                          marginTop: 16,
-                          paddingTop: 14,
-                          borderTopWidth: 1,
-                          borderTopColor: '#E8DFD4',
-                        }}
-                      >
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B5C4A' }}>
-                          {t('ing.footer.allergens', lang)}
-                        </Text>
-                        <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 19, color: '#5D5246' }}>
-                          {scan.allergensText.trim()}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {ingredientPack.kind === 'structured' &&
-                    scan?.rawJson &&
-                    typeof scan.rawJson.traces === 'string' &&
-                    scan.rawJson.traces.trim() ? (
-                      <View style={{ marginTop: 12 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6B5C4A' }}>
-                          {t('ing.footer.traces', lang)}
-                        </Text>
-                        <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 19, color: '#5D5246' }}>
-                          {String(scan.rawJson.traces).trim()}
-                        </Text>
-                      </View>
-                    ) : null}
                   </View>
                 )}
 

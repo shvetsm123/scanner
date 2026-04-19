@@ -289,7 +289,12 @@ function applyAvoidPreferenceMatchesToAiResult(result: AiResult, input: KidsAiIn
 
 function finalizeKidsEvaluationWithPreferences(result: AiResult, input: KidsAiInput): AiResult {
   const merged = applyAvoidPreferenceMatchesToAiResult(result, input);
-  return applyDeterministicFormulaStageVerdictPatch(input.childAgeProfile.ageInMonths, input.product, merged);
+  return applyDeterministicFormulaStageVerdictPatch(
+    input.childAgeProfile.ageInMonths,
+    input.childAgeProfile.ageBucket,
+    input.product,
+    merged,
+  );
 }
 
 export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResult> {
