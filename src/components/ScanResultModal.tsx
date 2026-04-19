@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 
 import { formatIngredientNameForLang, polishIngredientNote } from '../lib/ingredientDisplay';
 import { avoidLabel, getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
@@ -13,6 +13,22 @@ import { M } from '../../constants/mamaTheme';
 import { selectDistinctDisplayReasons } from '../lib/scanResultAntiRepeat';
 import { VerdictBadge } from './VerdictBadge';
 type ResultTab = 'general' | 'ingredients';
+
+/** UI-only: true when we should render a product image (no slot when false). */
+function hasProductImageUrl(value: unknown): boolean {
+  if (value == null) {
+    return false;
+  }
+  const s = String(value).trim();
+  if (!s) {
+    return false;
+  }
+  const lower = s.toLowerCase();
+  if (lower === 'null' || lower === 'undefined') {
+    return false;
+  }
+  return /^https?:\/\//i.test(s);
+}
 
 function preferenceMatchDisplayLine(line: string, lang: AppLanguage): string {
   const t0 = line.trim();
@@ -99,11 +115,17 @@ export function ScanResultModal({
   reuseNotice,
 }: ScanResultModalProps) {
   const lang = getAppLanguage();
+  const { height: winH } = useWindowDimensions();
   const [tab, setTab] = useState<ResultTab>('general');
+  const [productImageFailed, setProductImageFailed] = useState(false);
 
   useEffect(() => {
     setTab('general');
   }, [scan?.id]);
+
+  useEffect(() => {
+    setProductImageFailed(false);
+  }, [scan?.id, scan?.imageUrl]);
 
   useEffect(() => {
     if (!visible || !scan) {
@@ -157,7 +179,10 @@ export function ScanResultModal({
   }, [scan, lang]);
 
   const favoriteDisabled = favoriteLoading || !scan;
-  const showProductImage = Boolean(scan?.imageUrl?.trim());
+  const showHeroImage = scan != null && hasProductImageUrl(scan.imageUrl) && !productImageFailed;
+  const modalCardMaxH = winH * 0.88;
+  const heroImageH = 168;
+  const scrollMaxH = showHeroImage ? Math.max(220, modalCardMaxH - heroImageH) : undefined;
   const isUnknownNotFound =
     scan != null &&
     scan.verdict === 'unknown' &&
@@ -208,22 +233,26 @@ export function ScanResultModal({
           style={{
             borderRadius: M.r24,
             backgroundColor: M.bgCard,
-            maxHeight: '88%',
+            maxHeight: modalCardMaxH,
             overflow: 'hidden',
             ...M.shadowCard,
           }}
         >
-          {showProductImage ? (
+          {showHeroImage ? (
             <Image
-              source={{ uri: scan!.imageUrl!.trim() }}
-              style={{ width: '100%', height: 168, backgroundColor: M.bgCardMuted }}
-              contentFit="contain"
+              source={{ uri: String(scan!.imageUrl).trim() }}
+              style={{ width: '100%', height: heroImageH }}
+              contentFit="cover"
+              onError={() => setProductImageFailed(true)}
             />
           ) : null}
-
           <ScrollView
-            style={{ maxHeight: showProductImage ? undefined : '100%' }}
-            contentContainerStyle={{ padding: 20, paddingBottom: 22 }}
+            style={scrollMaxH != null ? { maxHeight: scrollMaxH } : undefined}
+            contentContainerStyle={{
+              paddingHorizontal: 20,
+              paddingBottom: 22,
+              paddingTop: showHeroImage ? 14 : 16,
+            }}
             keyboardShouldPersistTaps="handled"
           >
             {isUnknownNotFound ? (
