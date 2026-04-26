@@ -1,12 +1,13 @@
 import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PAYWALL_RESULT } from 'react-native-purchases-ui';
 
 import { M } from '../constants/mamaTheme';
 import { getAppLanguage, t } from '../src/lib/i18n';
+import { hasMamaScanUnlimitedAccess } from '../src/lib/revenuecat/entitlements';
 import { purchasesErrorMessage } from '../src/lib/revenuecat/revenueCatService';
 import { getPlan, setPlan } from '../src/lib/storage';
 import { useRevenueCat } from '../src/providers/RevenueCatProvider';
@@ -28,7 +29,9 @@ function parsePlanQueryParam(raw: string | string[] | undefined): Plan | null {
 
 export default function PaywallScreen() {
   const lang = getAppLanguage();
-  const params = useLocalSearchParams<{ plan?: string | string[] }>();
+  const params = useLocalSearchParams<{ plan?: string | string[]; source?: string | string[] }>();
+  const source = Array.isArray(params.source) ? params.source[0] : params.source;
+  const isScanLockedSource = source === 'scan_locked';
   const [currentPlan, setCurrentPlan] = useState<Plan>('free');
   const [selectedPlan, setSelectedPlan] = useState<Plan>('unlimited');
   const [rcBusy, setRcBusy] = useState(false);
@@ -81,6 +84,12 @@ export default function PaywallScreen() {
     }, [load]),
   );
 
+  useEffect(() => {
+    if (isScanLockedSource) {
+      console.log('paywall_opened_from_scan');
+    }
+  }, [isScanLockedSource]);
+
   const goBack = () => {
     router.back();
   };
@@ -100,6 +109,9 @@ export default function PaywallScreen() {
     if (hasMamaScanUnlimited) {
       await setPlan('unlimited');
       void refreshCustomerInfo();
+      if (isScanLockedSource) {
+        console.log('purchase_completed_from_scan');
+      }
       router.back();
       return;
     }
@@ -119,6 +131,9 @@ export default function PaywallScreen() {
       const result = await presentPaywall();
       await refreshCustomerInfo();
       if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
+        if (isScanLockedSource) {
+          console.log('purchase_completed_from_scan');
+        }
         router.back();
       }
     } catch (e) {
@@ -138,15 +153,20 @@ export default function PaywallScreen() {
     }
     setRcBusy(true);
     try {
-      await restorePurchases();
+      const info = await restorePurchases();
       await load();
+      if (isScanLockedSource && hasMamaScanUnlimitedAccess(info)) {
+        console.log('purchase_completed_from_scan');
+        router.back();
+        return;
+      }
       Alert.alert('Restore', 'Purchases were restored if this account had any.');
     } catch (e) {
       Alert.alert('Restore failed', purchasesErrorMessage(e));
     } finally {
       setRcBusy(false);
     }
-  }, [isNativeStoreSupported, restorePurchases, load]);
+  }, [isNativeStoreSupported, restorePurchases, load, isScanLockedSource]);
 
   const freeSelected = selectedPlan === 'free';
   const unlimitedSelected = selectedPlan === 'unlimited';
@@ -180,8 +200,34 @@ export default function PaywallScreen() {
           <Text style={{ fontSize: 16, color: M.textMuted, fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
 
-        <Text style={{ fontSize: 30, lineHeight: 36, color: M.text, fontWeight: '700' }}>{t('pay.title', lang)}</Text>
-        <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: M.textBody }}>{t('pay.subtitle', lang)}</Text>
+        <Text style={{ fontSize: 30, lineHeight: 36, color: M.text, fontWeight: '700' }}>
+          {isScanLockedSource ? '🔍 Barcode detected' : t('pay.title', lang)}
+        </Text>
+        <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: M.textBody }}>
+          {isScanLockedSource ? 'We found something. Unlock the full analysis now.' : t('pay.subtitle', lang)}
+        </Text>
+
+        {isScanLockedSource ? (
+          <View
+            style={{
+              marginTop: 16,
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              borderRadius: M.r16,
+              backgroundColor: M.bgCard,
+              borderWidth: 1,
+              borderColor: M.gold,
+              gap: 8,
+              ...M.shadowSoft,
+            }}
+          >
+            {['3-day free trial', '$9.99/month after', 'Cancel anytime'].map((line) => (
+              <Text key={line} style={{ fontSize: 15, lineHeight: 22, color: M.textBody, fontWeight: '700' }}>
+                • {line}
+              </Text>
+            ))}
+          </View>
+        ) : null}
 
         <View
           style={{

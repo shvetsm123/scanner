@@ -101,6 +101,7 @@ function freeDailyScanUsageLabel(successCount: number, lang: ReturnType<typeof g
 }
 
 type DailyScanSnapshot = { dateKey: string; count: number };
+type PendingLockedScanProductPreview = { barcode: string };
 
 type PendingPostScanOutcome =
   | {
@@ -139,6 +140,9 @@ export default function HomeScreen() {
   const [manualBarcodeValue, setManualBarcodeValue] = useState('');
   const [manualBarcodeError, setManualBarcodeError] = useState<string | null>(null);
   const [supportModalVisible, setSupportModalVisible] = useState(false);
+  const [pendingLockedScanBarcode, setPendingLockedScanBarcode] = useState<string | null>(null);
+  const [pendingLockedScanProductPreview, setPendingLockedScanProductPreview] =
+    useState<PendingLockedScanProductPreview | null>(null);
 
   const activeResult = useMemo(() => {
     if (!activeModalScanId) {
@@ -166,6 +170,11 @@ export default function HomeScreen() {
   const expectingScannerDismissHandoffRef = useRef(false);
   const scannerDismissedForHandoffRef = useRef(false);
   const scannerModalVisibleRef = useRef(false);
+  const pendingLockedScanBarcodeRef = useRef<string | null>(null);
+  const pendingLockedScanProductPreviewRef = useRef<PendingLockedScanProductPreview | null>(null);
+  const handleBarcodeScannedRef = useRef<
+    ((payload: { data: string; skipLockedPaywall?: boolean }) => Promise<void>) | null
+  >(null);
   /** After a manual barcode submit, "Scan again" should reopen the manual modal, not the camera. */
   const preferManualRescanRef = useRef(false);
   const hydrateLockRef = useRef(false);
@@ -175,8 +184,8 @@ export default function HomeScreen() {
   scanErrorVisibleRef.current = scanError != null;
   unknownResultVisibleRef.current = unknownResultVisible;
   scannerModalVisibleRef.current = scannerModalVisible;
-
-  const dailyLimitReached = effectivePlan === 'free' && dailyScanState.count >= 2;
+  pendingLockedScanBarcodeRef.current = pendingLockedScanBarcode;
+  pendingLockedScanProductPreviewRef.current = pendingLockedScanProductPreview;
 
   const clearPostScanHandoff = useCallback(() => {
     pendingPostScanOutcomeRef.current = null;
@@ -464,13 +473,23 @@ export default function HomeScreen() {
     setScannerModalVisible(true);
   };
 
-  const navigatePaywall = (opts?: { preselect?: 'unlimited'; closeResultModalFirst?: boolean }) => {
+  const navigatePaywall = (opts?: {
+    preselect?: 'unlimited';
+    closeResultModalFirst?: boolean;
+    source?: 'scan_locked';
+  }) => {
     if (opts?.closeResultModalFirst) {
       onCloseModal();
     }
     const push = () => {
-      if (opts?.preselect === 'unlimited') {
-        router.push({ pathname: '/paywall', params: { plan: opts.preselect } });
+      if (opts?.preselect === 'unlimited' || opts?.source) {
+        router.push({
+          pathname: '/paywall',
+          params: {
+            ...(opts.preselect === 'unlimited' ? { plan: opts.preselect } : {}),
+            ...(opts.source ? { source: opts.source } : {}),
+          },
+        });
       } else {
         router.push('/paywall');
       }
@@ -501,11 +520,6 @@ export default function HomeScreen() {
   }, [clearPostScanHandoff]);
 
   const openScanner = async () => {
-    if (dailyLimitReached) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      navigatePaywall({ preselect: 'unlimited' });
-      return;
-    }
     preferManualRescanRef.current = false;
     await waitUntilPreferencesSyncIdle();
     if (scanPipelineLoadingRef.current || isProcessingScanRef.current) {
@@ -530,7 +544,7 @@ export default function HomeScreen() {
     setScannerModalVisible(true);
   };
 
-  const handleBarcodeScanned = async ({ data }: { data: string }) => {
+  const handleBarcodeScanned = async ({ data, skipLockedPaywall = false }: { data: string; skipLockedPaywall?: boolean }) => {
     const scanBlocked = () =>
       !data ||
       isProcessingScanRef.current ||
@@ -561,11 +575,14 @@ export default function HomeScreen() {
     }
 
     try {
-      const [childAgeProfile, avoids, freshRecent] = await Promise.all([
+      const [childAgeProfile, avoids, freshRecent, latestStoredPlan] = await Promise.all([
         getChildAgeProfile(),
         getAvoidPreferences(),
         getRecentScans(),
+        getPlan(),
       ]);
+      const latestEffectivePlan = gatedPlan(latestStoredPlan);
+      setPlan(latestStoredPlan);
       const normBarcode = data.trim();
       const contextKey = buildScanAnalysisContextKey(
         normBarcode,
@@ -598,11 +615,16 @@ export default function HomeScreen() {
         return;
       }
 
-      const allowed = await canUseSuccessfulScanForPlan(effectivePlan);
+      const allowed = skipLockedPaywall || (await canUseSuccessfulScanForPlan(latestEffectivePlan));
       if (!allowed) {
+        console.log('scan_blocked_paywall', { barcode: normBarcode });
         pendingPostScanOutcomeRef.current = null;
         expectingScannerDismissHandoffRef.current = false;
         scannerDismissedForHandoffRef.current = false;
+        setPendingLockedScanBarcode(normBarcode);
+        setPendingLockedScanProductPreview({ barcode: normBarcode });
+        pendingLockedScanBarcodeRef.current = normBarcode;
+        pendingLockedScanProductPreviewRef.current = { barcode: normBarcode };
         isProcessingScanRef.current = false;
         setScanPipelineLoading(false);
         setScanProgressKey(null);
@@ -611,7 +633,7 @@ export default function HomeScreen() {
           console.warn('[scanFlow] loading hidden');
         }
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        navigatePaywall({ preselect: 'unlimited' });
+        navigatePaywall({ preselect: 'unlimited', source: 'scan_locked' });
         return;
       }
 
@@ -712,12 +734,46 @@ export default function HomeScreen() {
     }
   };
 
+  handleBarcodeScannedRef.current = handleBarcodeScanned;
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      const resumeLockedScanIfUnlocked = async () => {
+        const barcode = pendingLockedScanBarcodeRef.current;
+        if (!barcode) {
+          return;
+        }
+
+        await waitUntilPreferencesSyncIdle();
+        const storedPlan = await getPlan();
+        const latestEffectivePlan = gatedPlan(storedPlan);
+        setPlan(storedPlan);
+
+        if (cancelled || (latestEffectivePlan !== 'unlimited' && storedPlan !== 'unlimited')) {
+          return;
+        }
+
+        setPendingLockedScanBarcode(null);
+        setPendingLockedScanProductPreview(null);
+        pendingLockedScanBarcodeRef.current = null;
+        pendingLockedScanProductPreviewRef.current = null;
+
+        queueMicrotask(() => {
+          void handleBarcodeScannedRef.current?.({ data: barcode, skipLockedPaywall: true });
+        });
+      };
+
+      void resumeLockedScanIfUnlocked();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [gatedPlan]),
+  );
+
   const openManualBarcodeEntry = async () => {
-    if (dailyLimitReached) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      navigatePaywall({ preselect: 'unlimited' });
-      return;
-    }
     await waitUntilPreferencesSyncIdle();
     if (scanPipelineLoadingRef.current || isProcessingScanRef.current) {
       return;
@@ -1430,7 +1486,7 @@ export default function HomeScreen() {
         }
         onClose={closeScannerSession}
         onBarcodeScanned={handleBarcodeScanned}
-        dailyLimitReached={dailyLimitReached}
+        dailyLimitReached={false}
         onDailyLimitPress={() => {
           closeScannerSession();
           navigatePaywall({ preselect: 'unlimited' });
