@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
+import { ShareResultCard } from './ShareResultCard';
 import { setAiResultReportDraft } from '../lib/aiResultReportDraft';
 import { formatIngredientNameForLang, polishIngredientNote } from '../lib/ingredientDisplay';
 import { avoidLabel, getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
 import { localizeResultLine } from '../lib/localizeScanText';
+import { shareScanResult } from '../lib/share/shareScanResult';
 import { AVOID_PREFERENCE_IDS, type AvoidPreference, type Plan } from '../types/preferences';
 import type { AppLanguage } from '../lib/deviceLanguage';
 import type { RecentScan, Verdict } from '../types/scan';
@@ -167,7 +169,9 @@ export function ScanResultModal({
   reuseNotice,
 }: ScanResultModalProps) {
   const lang = getAppLanguage();
+  const shareCardRef = useRef<View>(null);
   const [tab, setTab] = useState<ResultTab>('general');
+  const [shareLoading, setShareLoading] = useState(false);
 
   useEffect(() => {
     setTab('general');
@@ -244,6 +248,18 @@ export function ScanResultModal({
     router.push('/report-result');
   };
 
+  const handleSharePress = async () => {
+    if (!scan || shareLoading) {
+      return;
+    }
+    setShareLoading(true);
+    try {
+      await shareScanResult({ cardRef: shareCardRef, scan });
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
   const tabBtn = (id: ResultTab, label: string) => (
     <Pressable
       key={id}
@@ -270,6 +286,7 @@ export function ScanResultModal({
   );
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -361,36 +378,62 @@ export function ScanResultModal({
                     {scan?.productName ?? t('common.product', lang)}
                   </Text>
                   {scan ? (
-                    <Pressable
-                      onPress={onFavoritePress}
-                      disabled={favoriteDisabled}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        plan === 'unlimited'
-                          ? isFavorited
-                            ? t('result.a11y.removeFav', lang)
-                            : t('result.a11y.addFav', lang)
-                          : t('result.a11y.favLocked', lang)
-                      }
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 14,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: plan === 'unlimited' && isFavorited ? '#FCEAEA' : M.bgChip,
-                        borderWidth: 1,
-                        borderColor: plan === 'unlimited' && isFavorited ? '#E1BDBD' : M.line,
-                        opacity: favoriteDisabled ? 0.5 : 1,
-                      }}
-                    >
-                      <Ionicons
-                        name={plan === 'unlimited' && isFavorited ? 'heart' : 'heart-outline'}
-                        size={22}
-                        color={plan !== 'unlimited' ? '#B59B7A' : isFavorited ? '#B85C5C' : '#6D6053'}
-                      />
-                    </Pressable>
+                    <View style={{ gap: 8 }}>
+                      <Pressable
+                        onPress={onFavoritePress}
+                        disabled={favoriteDisabled}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          plan === 'unlimited'
+                            ? isFavorited
+                              ? t('result.a11y.removeFav', lang)
+                              : t('result.a11y.addFav', lang)
+                            : t('result.a11y.favLocked', lang)
+                        }
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 14,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: plan === 'unlimited' && isFavorited ? '#FCEAEA' : M.bgChip,
+                          borderWidth: 1,
+                          borderColor: plan === 'unlimited' && isFavorited ? '#E1BDBD' : M.line,
+                          opacity: favoriteDisabled ? 0.5 : 1,
+                        }}
+                      >
+                        <Ionicons
+                          name={plan === 'unlimited' && isFavorited ? 'heart' : 'heart-outline'}
+                          size={22}
+                          color={plan !== 'unlimited' ? '#B59B7A' : isFavorited ? '#B85C5C' : '#6D6053'}
+                        />
+                      </Pressable>
+                      <Pressable
+                        onPress={handleSharePress}
+                        disabled={shareLoading}
+                        accessibilityRole="button"
+                        accessibilityLabel="Share result"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 14,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: M.bgChip,
+                          borderWidth: 1,
+                          borderColor: M.line,
+                          opacity: shareLoading ? 0.65 : 1,
+                        }}
+                      >
+                        {shareLoading ? (
+                          <ActivityIndicator size="small" color={M.textMuted} />
+                        ) : (
+                          <Ionicons name="share-outline" size={21} color={M.textBody} />
+                        )}
+                      </Pressable>
+                    </View>
                   ) : null}
                 </View>
                 {!!scan?.brand && (
@@ -560,5 +603,20 @@ export function ScanResultModal({
         </View>
       </View>
     </Modal>
+    {scan ? (
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: -10000,
+          top: 0,
+          width: 360,
+          height: 450,
+        }}
+      >
+        <ShareResultCard ref={shareCardRef} scan={scan} />
+      </View>
+    ) : null}
+    </>
   );
 }
