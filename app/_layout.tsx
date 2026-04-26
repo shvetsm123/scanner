@@ -1,17 +1,20 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { RevenueCatProvider } from '../src/providers/RevenueCatProvider';
 
 export default function RootLayout() {
   return (
-    <RevenueCatProvider>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-        }}
-      />
-    </RevenueCatProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <RevenueCatProvider>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+          }}
+        />
+      </RevenueCatProvider>
+    </GestureHandlerRootView>
   );
 }

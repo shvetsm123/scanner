@@ -1,6 +1,13 @@
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, Text, View } from 'react-native';
+import {
+  PanGestureHandler,
+  State,
+  type PanGestureHandlerGestureEvent,
+  type PanGestureHandlerStateChangeEvent,
+} from 'react-native-gesture-handler';
 
 import { M } from '../../constants/mamaTheme';
 import type { RecentScan } from '../types/scan';
@@ -24,60 +31,108 @@ function hasProductImageUrl(value: unknown): boolean {
 type RecentScanCardProps = {
   scan: RecentScan;
   onPress: (scanId: string) => void;
+  onSave: (scan: RecentScan) => void;
+  onDelete: (scan: RecentScan) => void;
 };
 
-function cardToneForVerdict(verdict: RecentScan['verdict']): { bg: string; border: string; dot: string } {
+function cardToneForVerdict(verdict: RecentScan['verdict']): { bg: string; border: string } {
   if (verdict === 'good') {
-    return { bg: '#EAF4EE', border: '#CDE2D5', dot: '#3D8B5B' };
+    return { bg: '#EAF4EE', border: '#CDE2D5' };
   }
   if (verdict === 'sometimes') {
-    return { bg: '#FFF4D8', border: '#E8C989', dot: '#C58A1A' };
+    return { bg: '#FFF4D8', border: '#E8C989' };
   }
   if (verdict === 'avoid') {
-    return { bg: '#FCEAEA', border: '#E8C7C7', dot: '#B85C5C' };
+    return { bg: '#FCEAEA', border: '#E8C7C7' };
   }
-  return { bg: M.bgCard, border: M.line, dot: M.lineStrong };
+  return { bg: M.bgCard, border: M.line };
 }
 
-function RecentScanCardBody({ scan, dotColor }: { scan: RecentScan; dotColor: string }) {
+const ACTION_WIDTH = 90;
+const ACTION_THRESHOLD = ACTION_WIDTH / 2;
+const VELOCITY_THRESHOLD = 700;
+
+function RecentScanCardBody({ scan }: { scan: RecentScan }) {
   return (
-    <View style={{ width: '100%', flexDirection: 'row', gap: 10 }}>
-      <View
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: 999,
-          backgroundColor: dotColor,
-          marginTop: 6,
-        }}
-      />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <Text style={{ flexShrink: 1, fontSize: 16, fontWeight: '700', color: M.text }} numberOfLines={1}>
-            {scan.productName}
-          </Text>
-          <VerdictBadge verdict={scan.verdict} />
-        </View>
-        {!!scan.brand && (
-          <Text style={{ marginTop: 6, fontSize: 13, color: M.textMuted }} numberOfLines={1}>
-            {scan.brand}
-          </Text>
-        )}
-        <Text style={{ marginTop: 10, fontSize: 14, lineHeight: 20, color: M.textBody }} numberOfLines={2}>
-          {scan.summary}
+    <View style={{ width: '100%' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <Text style={{ flexShrink: 1, fontSize: 16, fontWeight: '700', color: M.text }} numberOfLines={1}>
+          {scan.productName}
         </Text>
-        <Text style={{ marginTop: 10, fontSize: 12, color: M.textSoft }}>Barcode: {scan.barcode}</Text>
+        <VerdictBadge verdict={scan.verdict} />
       </View>
+      {!!scan.brand && (
+        <Text style={{ marginTop: 6, fontSize: 13, color: M.textMuted }} numberOfLines={1}>
+          {scan.brand}
+        </Text>
+      )}
+      <Text style={{ marginTop: 10, fontSize: 14, lineHeight: 20, color: M.textBody }} numberOfLines={2}>
+        {scan.summary}
+      </Text>
+      <Text style={{ marginTop: 10, fontSize: 12, color: M.textSoft }}>Barcode: {scan.barcode}</Text>
     </View>
   );
 }
 
-export function RecentScanCard({ scan, onPress }: RecentScanCardProps) {
+export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCardProps) {
   const [thumbFailed, setThumbFailed] = useState(false);
+  const translateX = useRef(new Animated.Value(0)).current;
+  const openOffsetRef = useRef(0);
 
   useEffect(() => {
     setThumbFailed(false);
   }, [scan.id, scan.imageUrl]);
+
+  const animateTo = (value: number) => {
+    openOffsetRef.current = value;
+    Animated.spring(translateX, {
+      toValue: value,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 80,
+    }).start();
+  };
+
+  const close = () => animateTo(0);
+
+  const triggerSave = () => {
+    close();
+    onSave(scan);
+  };
+
+  const triggerDelete = () => {
+    close();
+    onDelete(scan);
+  };
+
+  const handleGestureEvent = (event: PanGestureHandlerGestureEvent) => {
+    const next = Math.max(-ACTION_WIDTH, Math.min(ACTION_WIDTH, openOffsetRef.current + event.nativeEvent.translationX));
+    translateX.setValue(next);
+  };
+
+  const handleGestureStateChange = (event: PanGestureHandlerStateChangeEvent) => {
+    const { state, oldState, translationX, velocityX } = event.nativeEvent;
+    const finished =
+      state === State.END ||
+      state === State.CANCELLED ||
+      state === State.FAILED ||
+      oldState === State.ACTIVE;
+
+    if (!finished) {
+      return;
+    }
+
+    const total = openOffsetRef.current + translationX;
+    if (total > ACTION_THRESHOLD || velocityX > VELOCITY_THRESHOLD) {
+      animateTo(ACTION_WIDTH);
+      return;
+    }
+    if (total < -ACTION_THRESHOLD || velocityX < -VELOCITY_THRESHOLD) {
+      animateTo(-ACTION_WIDTH);
+      return;
+    }
+    close();
+  };
 
   const showThumb = hasProductImageUrl(scan.imageUrl) && !thumbFailed;
   const tone = cardToneForVerdict(scan.verdict);
@@ -92,48 +147,85 @@ export function RecentScanCard({ scan, onPress }: RecentScanCardProps) {
     opacity: pressed ? 0.92 : 1,
   });
 
-  if (!showThumb) {
-    return (
-      <Pressable
-        onPress={() => onPress(scan.id)}
-        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-        style={({ pressed }) => ({
-          ...baseStyle(pressed),
-          flexDirection: 'column',
-          alignSelf: 'stretch',
-          width: '100%',
-        })}
-      >
-        <RecentScanCardBody scan={scan} dotColor={tone.dot} />
-      </Pressable>
-    );
-  }
-
   return (
-    <Pressable
-      onPress={() => onPress(scan.id)}
-      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-      style={({ pressed }) => ({
-        ...baseStyle(pressed),
-        flexDirection: 'row',
-        alignSelf: 'stretch',
-        width: '100%',
-        gap: 14,
-      })}
-    >
-      <Image
-        source={{ uri: String(scan.imageUrl).trim() }}
+    <View style={{ alignSelf: 'stretch', width: '100%', overflow: 'hidden', borderRadius: M.r18 }}>
+      <View
         style={{
-          width: 56,
-          height: 56,
-          borderRadius: 12,
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: ACTION_WIDTH,
+          backgroundColor: '#DCEFE3',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
         }}
-        contentFit="cover"
-        onError={() => setThumbFailed(true)}
-      />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <RecentScanCardBody scan={scan} dotColor={tone.dot} />
+      >
+        <Pressable onPress={triggerSave} style={{ alignItems: 'center', justifyContent: 'center', flex: 1, width: '100%' }}>
+          <Ionicons name="heart" size={24} color="#2D7A4B" />
+          <Text style={{ marginTop: 5, fontSize: 13, fontWeight: '800', color: '#2D7A4B' }}>Save</Text>
+        </Pressable>
       </View>
-    </Pressable>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: ACTION_WIDTH,
+          backgroundColor: '#F3D8D8',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Pressable onPress={triggerDelete} style={{ alignItems: 'center', justifyContent: 'center', flex: 1, width: '100%' }}>
+          <Ionicons name="trash" size={24} color="#A33D3D" />
+          <Text style={{ marginTop: 5, fontSize: 13, fontWeight: '800', color: '#A33D3D' }}>Delete</Text>
+        </Pressable>
+      </View>
+      <PanGestureHandler
+        activeOffsetX={[-10, 10]}
+        failOffsetY={[-8, 8]}
+        onGestureEvent={handleGestureEvent}
+        onHandlerStateChange={handleGestureStateChange}
+      >
+        <Animated.View style={{ transform: [{ translateX }] }}>
+          <Pressable
+            onPress={() => {
+              if (openOffsetRef.current !== 0) {
+                close();
+                return;
+              }
+              onPress(scan.id);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            style={({ pressed }) => ({
+              ...baseStyle(pressed),
+              flexDirection: showThumb ? 'row' : 'column',
+              alignSelf: 'stretch',
+              width: '100%',
+              gap: showThumb ? 14 : undefined,
+            })}
+          >
+            {showThumb ? (
+              <Image
+                source={{ uri: String(scan.imageUrl).trim() }}
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 12,
+                }}
+                contentFit="cover"
+                onError={() => setThumbFailed(true)}
+              />
+            ) : null}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <RecentScanCardBody scan={scan} />
+            </View>
+          </Pressable>
+        </Animated.View>
+      </PanGestureHandler>
+    </View>
   );
 }

@@ -701,6 +701,13 @@ export const addRecentScan = async (scan: RecentScan, replaceUnknownDuplicateWit
   return next;
 };
 
+export const removeRecentScanById = async (scanId: string): Promise<RecentScan[]> => {
+  const current = await getRecentScans();
+  const next = current.filter((scan) => scan.id !== scanId);
+  await AsyncStorage.setItem(RECENT_SCANS_KEY_V4, JSON.stringify(next));
+  return next;
+};
+
 export async function getCachedSupabaseProfileId(): Promise<string | null> {
   const id = await AsyncStorage.getItem(SUPABASE_PROFILE_ID_KEY);
   const trimmed = id?.trim();

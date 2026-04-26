@@ -40,6 +40,7 @@ import {
   getPlan,
   getRecentScans,
   incrementSuccessfulScanCountIfNeeded,
+  removeRecentScanById,
   syncRemotePreferencesWithLocal,
   tryPersistSuccessfulScanToSupabase,
   waitUntilPreferencesSyncIdle,
@@ -145,6 +146,8 @@ export default function HomeScreen() {
   const [manualBarcodeValue, setManualBarcodeValue] = useState('');
   const [manualBarcodeError, setManualBarcodeError] = useState<string | null>(null);
   const [supportModalVisible, setSupportModalVisible] = useState(false);
+  const [favoriteUpsellVisible, setFavoriteUpsellVisible] = useState(false);
+  const [pendingDeleteScan, setPendingDeleteScan] = useState<RecentScan | null>(null);
   const [pendingLockedScanBarcode, setPendingLockedScanBarcode] = useState<string | null>(null);
   const [pendingLockedScanProductPreview, setPendingLockedScanProductPreview] =
     useState<PendingLockedScanProductPreview | null>(null);
@@ -884,6 +887,60 @@ export default function HomeScreen() {
     setResultModalVisible(true);
   };
 
+  const saveScanToFavorites = async (scan: RecentScan) => {
+    if (effectivePlan !== 'unlimited') {
+      setFavoriteUpsellVisible(true);
+      return;
+    }
+    if (!isSupabaseConfigured()) {
+      console.warn('[home] swipe favorite: Supabase not configured');
+      return;
+    }
+    try {
+      let profileId = await getCachedSupabaseProfileId();
+      if (!profileId) {
+        await ensureSupabaseProfileLocal();
+        profileId = await getCachedSupabaseProfileId();
+      }
+      const client = getSupabase();
+      if (!profileId || !client) {
+        console.warn('[home] swipe favorite: missing profile or client');
+        return;
+      }
+      const productId = await getOrCreateProductId(client, scan);
+      if (!productId) {
+        console.warn('[home] swipe favorite: could not resolve product_id');
+        return;
+      }
+      const favorited = await isFavorite(client, profileId, productId);
+      if (!favorited) {
+        const ok = await addFavorite(client, profileId, productId);
+        if (!ok) {
+          console.warn('[home] swipe favorite: add failed');
+          return;
+        }
+      }
+      await refreshFavoritesList();
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (err) {
+      console.warn('[home] saveScanToFavorites', err);
+    }
+  };
+
+  const confirmDeleteRecentScan = async () => {
+    if (!pendingDeleteScan) {
+      return;
+    }
+    const scanId = pendingDeleteScan.id;
+    const next = await removeRecentScanById(scanId);
+    setRecentScans(next);
+    if (activeModalScanId === scanId) {
+      onCloseModal();
+    }
+    setPendingDeleteScan(null);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   const onFavoriteControlPress = async () => {
     if (effectivePlan !== 'unlimited') {
       promptFavoritesUnlimitedUpsell();
@@ -1156,7 +1213,15 @@ export default function HomeScreen() {
               ))}
             </>
           ) : (
-            recentScans.map((scan) => <RecentScanCard key={scan.id} scan={scan} onPress={openSavedScanById} />)
+            recentScans.map((scan) => (
+              <RecentScanCard
+                key={scan.id}
+                scan={scan}
+                onPress={openSavedScanById}
+                onSave={saveScanToFavorites}
+                onDelete={setPendingDeleteScan}
+              />
+            ))
           )}
         </View>
 
@@ -1277,6 +1342,107 @@ export default function HomeScreen() {
             >
               <Text style={{ fontSize: 15, fontWeight: '700', color: M.cream }}>{t('common.close', lang)}</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={favoriteUpsellVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFavoriteUpsellVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: M.overlay,
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View
+            style={{
+              borderRadius: M.r24,
+              backgroundColor: M.bgCard,
+              padding: 22,
+              width: '100%',
+              maxWidth: 360,
+              alignSelf: 'center',
+              ...M.shadowCard,
+            }}
+          >
+            <Text style={{ fontSize: 22, lineHeight: 28, fontWeight: '800', color: M.text }}>Save products to favorites</Text>
+            <Text style={{ marginTop: 12, fontSize: 15, lineHeight: 22, color: M.textBody }}>Available in Unlimited plan</Text>
+            <Pressable
+              onPress={() => {
+                setFavoriteUpsellVisible(false);
+                navigatePaywall({ preselect: 'unlimited' });
+              }}
+              style={{
+                marginTop: 22,
+                borderRadius: M.r14,
+                backgroundColor: M.inkButton,
+                alignItems: 'center',
+                paddingVertical: 14,
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '800', color: M.cream }}>Unlock feature</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={pendingDeleteScan != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingDeleteScan(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: M.overlay,
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View
+            style={{
+              borderRadius: M.r24,
+              backgroundColor: M.bgCard,
+              padding: 22,
+              width: '100%',
+              maxWidth: 360,
+              alignSelf: 'center',
+              ...M.shadowCard,
+            }}
+          >
+            <Text style={{ fontSize: 22, lineHeight: 28, fontWeight: '800', color: M.text }}>Delete this scan?</Text>
+            <Text style={{ marginTop: 12, fontSize: 15, lineHeight: 22, color: M.textBody }}>This action cannot be undone</Text>
+            <View style={{ marginTop: 22, flexDirection: 'row', gap: 10 }}>
+              <Pressable
+                onPress={() => void confirmDeleteRecentScan()}
+                style={{
+                  flex: 1,
+                  borderRadius: M.r14,
+                  backgroundColor: '#7A2E2E',
+                  alignItems: 'center',
+                  paddingVertical: 13,
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '800', color: M.cream }}>Delete</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPendingDeleteScan(null)}
+                style={{
+                  flex: 1,
+                  borderRadius: M.r14,
+                  backgroundColor: M.bgChipSelected,
+                  alignItems: 'center',
+                  paddingVertical: 13,
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '800', color: M.textBody }}>Cancel</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
