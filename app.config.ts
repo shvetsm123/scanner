@@ -91,7 +91,7 @@ const config: ExpoConfig = {
   extra: {
     router: {},
     eas: {
-      projectId: '4a5fe785-ff41-4111-a3ed-d6cb8fbe8e0b',
+      projectId: '98221dcc-7f82-4769-a8b6-ceaf3e9fb8e0',
     },
 
     revenueCatApiKeyIos,
