@@ -61,7 +61,7 @@ export default function PaywallScreen() {
     ],
     [],
   );
-  const upgradeOffer = useMemo(() => ['3-day free trial', 'Then $9.99/month', 'Cancel anytime'], []);
+  const upgradeOffer = useMemo(() => ['Then $9.99/month', 'Cancel anytime'], []);
   const scanLockedBenefits = useMemo(
     () => [
       { icon: '🔍', label: 'Sugar safety level' },
@@ -71,7 +71,7 @@ export default function PaywallScreen() {
     ],
     [],
   );
-  const scanLockedOffer = useMemo(() => ['3-day free trial', 'Then $9.99/month', 'Cancel anytime'], []);
+  const scanLockedOffer = useMemo(() => ['Then $9.99/month', 'Cancel anytime'], []);
   const scanLockedPreview = useMemo(
     () => [
       '⚠️ High sugar level detected',
@@ -321,9 +321,8 @@ export default function PaywallScreen() {
                   <Text style={{ fontSize: 11, fontWeight: '800', color: M.cream, letterSpacing: 0.4 }}>3 DAYS FREE</Text>
                 </View>
                 <View style={{ gap: 8 }}>
-                  <Text style={{ fontSize: 16, lineHeight: 23, color: M.text, fontWeight: '800' }}>{scanLockedOffer[0]}</Text>
-                  <Text style={{ fontSize: 14, lineHeight: 20, color: M.textBody, fontWeight: '700' }}>{scanLockedOffer[1]}</Text>
-                  <Text style={{ fontSize: 14, lineHeight: 20, color: M.textMuted, fontWeight: '700' }}>{scanLockedOffer[2]}</Text>
+                  <Text style={{ fontSize: 14, lineHeight: 20, color: M.textBody, fontWeight: '700' }}>{scanLockedOffer[0]}</Text>
+                  <Text style={{ fontSize: 14, lineHeight: 20, color: M.textMuted, fontWeight: '700' }}>{scanLockedOffer[1]}</Text>
                 </View>
               </View>
             </View>
@@ -332,6 +331,9 @@ export default function PaywallScreen() {
           <>
             <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: M.textBody }}>
               Scan without limits. Get instant ingredient analysis personalized for your child.
+            </Text>
+            <Text style={{ marginTop: 10, fontSize: 17, lineHeight: 24, color: M.sageDeep, fontWeight: '800' }}>
+              Start with a 3-day free trial
             </Text>
 
             <View
@@ -396,9 +398,8 @@ export default function PaywallScreen() {
               </View>
               <Text style={{ fontSize: 16, fontWeight: '800', color: M.text }}>Start free today</Text>
               <View style={{ marginTop: 16, gap: 12 }}>
-                <Text style={{ fontSize: 18, lineHeight: 25, color: M.text, fontWeight: '800' }}>{upgradeOffer[0]}</Text>
-                <Text style={{ fontSize: 15, lineHeight: 22, color: M.sageDeep, fontWeight: '700' }}>{upgradeOffer[1]}</Text>
-                <Text style={{ fontSize: 15, lineHeight: 22, color: M.textMuted, fontWeight: '700' }}>{upgradeOffer[2]}</Text>
+                <Text style={{ fontSize: 15, lineHeight: 22, color: M.sageDeep, fontWeight: '700' }}>{upgradeOffer[0]}</Text>
+                <Text style={{ fontSize: 15, lineHeight: 22, color: M.textMuted, fontWeight: '700' }}>{upgradeOffer[1]}</Text>
               </View>
             </View>
           </>
