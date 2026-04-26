@@ -9,10 +9,10 @@ import {
 } from 'react';
 import type { CustomerInfo, PurchasesOfferings, PurchasesPackage } from 'react-native-purchases';
 import Purchases from 'react-native-purchases';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
+import RevenueCatUI from 'react-native-purchases-ui';
 
 import type { Plan } from '../types/preferences';
-import { MAMASCAN_UNLIMITED_ENTITLEMENT_ID, hasMamaScanUnlimitedAccess } from '../lib/revenuecat/entitlements';
+import { hasKidlensUnlimitedAccess } from '../lib/revenuecat/entitlements';
 import {
   configureRevenueCat,
   fetchCustomerInfo,
@@ -35,15 +35,14 @@ type RevenueCatContextValue = {
   offerings: PurchasesOfferings | null;
   isRefreshing: boolean;
   lastError: string | null;
-  hasMamaScanUnlimited: boolean;
+  hasKidlensUnlimited: boolean;
   /** When native SDK finished first load, subscription state overrides mock local "unlimited" if not entitled. */
   entitlementsOverrideLocal: boolean;
   refreshCustomerInfo: () => Promise<void>;
   refreshOfferings: () => Promise<void>;
   restorePurchases: () => Promise<CustomerInfo>;
   purchasePackage: (pkg: PurchasesPackage) => Promise<CustomerInfo>;
-  presentPaywall: () => Promise<PAYWALL_RESULT>;
-  presentPaywallIfNeeded: () => Promise<PAYWALL_RESULT>;
+  purchaseMonthlyPackage: () => Promise<CustomerInfo>;
   presentCustomerCenter: () => Promise<void>;
   /** Combine RevenueCat entitlement with locally stored plan (for web and pre-bootstrap native). */
   gatedPlan: (localPlan: Plan) => Plan;
@@ -51,8 +50,15 @@ type RevenueCatContextValue = {
 
 const RevenueCatContext = createContext<RevenueCatContextValue | null>(null);
 
+function selectMonthlyOrFirstPackage(offerings: PurchasesOfferings): PurchasesPackage | null {
+  const packages = offerings.current?.availablePackages?.length
+    ? offerings.current.availablePackages
+    : Object.values(offerings.all).flatMap((offering) => offering.availablePackages);
+  return packages.find((pkg) => pkg.packageType === Purchases.PACKAGE_TYPE.MONTHLY) ?? packages[0] ?? null;
+}
+
 async function syncLocalPlanWithCustomerInfo(info: CustomerInfo): Promise<void> {
-  const nextPlan: Plan = hasMamaScanUnlimitedAccess(info) ? 'unlimited' : 'free';
+  const nextPlan: Plan = hasKidlensUnlimitedAccess(info) ? 'unlimited' : 'free';
   await setPlan(nextPlan);
   await syncRevenueCatDerivedPlanToSupabase(nextPlan);
 }
@@ -61,7 +67,7 @@ function computeGatedPlan(localPlan: Plan, ctx: Pick<RevenueCatContextValue, 'en
   if (!ctx.entitlementsOverrideLocal) {
     return localPlan;
   }
-  return hasMamaScanUnlimitedAccess(ctx.customerInfo) ? 'unlimited' : 'free';
+  return hasKidlensUnlimitedAccess(ctx.customerInfo) ? 'unlimited' : 'free';
 }
 
 export function RevenueCatProvider({ children }: { children: ReactNode }) {
@@ -163,18 +169,27 @@ export function RevenueCatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const presentPaywall = useCallback(async () => {
-    await configureRevenueCat();
-    setIsConfigured(true);
-    return RevenueCatUI.presentPaywall();
-  }, []);
-
-  const presentPaywallIfNeeded = useCallback(async () => {
-    await configureRevenueCat();
-    setIsConfigured(true);
-    return RevenueCatUI.presentPaywallIfNeeded({
-      requiredEntitlementIdentifier: MAMASCAN_UNLIMITED_ENTITLEMENT_ID,
-    });
+  const purchaseMonthlyPackage = useCallback(async () => {
+    setLastError(null);
+    try {
+      await configureRevenueCat();
+      setIsConfigured(true);
+      const nextOfferings = await fetchOfferings();
+      setOfferings(nextOfferings);
+      const selectedPackage = selectMonthlyOrFirstPackage(nextOfferings);
+      if (!selectedPackage) {
+        throw new Error('No subscription packages are available right now. Please try again.');
+      }
+      const info = await purchasePackageInternal(selectedPackage);
+      setCustomerInfo(info);
+      await syncLocalPlanWithCustomerInfo(info);
+      return info;
+    } catch (e) {
+      if (!isUserCancelledPurchaseError(e)) {
+        setLastError(purchasesErrorMessage(e));
+      }
+      throw e;
+    }
   }, []);
 
   const presentCustomerCenter = useCallback(async () => {
@@ -185,7 +200,7 @@ export function RevenueCatProvider({ children }: { children: ReactNode }) {
 
   const entitlementsOverrideLocal = isNativeStoreSupported && bootstrapDone && configureError == null;
 
-  const hasMamaScanUnlimited = hasMamaScanUnlimitedAccess(customerInfo);
+  const hasKidlensUnlimited = hasKidlensUnlimitedAccess(customerInfo);
 
   const gatedPlan = useCallback(
     (localPlan: Plan) =>
@@ -206,14 +221,13 @@ export function RevenueCatProvider({ children }: { children: ReactNode }) {
       offerings,
       isRefreshing,
       lastError,
-      hasMamaScanUnlimited,
+      hasKidlensUnlimited,
       entitlementsOverrideLocal,
       refreshCustomerInfo,
       refreshOfferings,
       restorePurchases,
       purchasePackage,
-      presentPaywall,
-      presentPaywallIfNeeded,
+      purchaseMonthlyPackage,
       presentCustomerCenter,
       gatedPlan,
     }),
@@ -226,14 +240,13 @@ export function RevenueCatProvider({ children }: { children: ReactNode }) {
       offerings,
       isRefreshing,
       lastError,
-      hasMamaScanUnlimited,
+      hasKidlensUnlimited,
       entitlementsOverrideLocal,
       refreshCustomerInfo,
       refreshOfferings,
       restorePurchases,
       purchasePackage,
-      presentPaywall,
-      presentPaywallIfNeeded,
+      purchaseMonthlyPackage,
       presentCustomerCenter,
       gatedPlan,
     ],

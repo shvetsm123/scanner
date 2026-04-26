@@ -3,12 +3,11 @@ import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-ro
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { PAYWALL_RESULT } from 'react-native-purchases-ui';
 
 import { M } from '../constants/mamaTheme';
 import { getAppLanguage, t } from '../src/lib/i18n';
-import { hasMamaScanUnlimitedAccess } from '../src/lib/revenuecat/entitlements';
-import { purchasesErrorMessage } from '../src/lib/revenuecat/revenueCatService';
+import { hasKidlensUnlimitedAccess } from '../src/lib/revenuecat/entitlements';
+import { isUserCancelledPurchaseError, purchasesErrorMessage } from '../src/lib/revenuecat/revenueCatService';
 import { getChildAgeProfile, getPlan, setPlan } from '../src/lib/storage';
 import { useRevenueCat } from '../src/providers/RevenueCatProvider';
 import type { Plan } from '../src/types/preferences';
@@ -43,14 +42,14 @@ export default function PaywallScreen() {
   const [rcBusy, setRcBusy] = useState(false);
   const {
     isNativeStoreSupported,
-    presentPaywall,
     restorePurchases,
+    purchaseMonthlyPackage,
     refreshCustomerInfo,
     lastError,
-    hasMamaScanUnlimited,
+    hasKidlensUnlimited,
   } = useRevenueCat();
 
-  const isEffectivelyUnlimited = hasMamaScanUnlimited || currentPlan === 'unlimited';
+  const isEffectivelyUnlimited = hasKidlensUnlimited || currentPlan === 'unlimited';
   const isEffectivelyFree = !isEffectivelyUnlimited;
 
   const upgradeBenefits = useMemo(
@@ -108,7 +107,7 @@ export default function PaywallScreen() {
 
   const continueDisabled =
     (selectedPlan === 'free' && currentPlan === 'free' && isEffectivelyFree) ||
-    (selectedPlan === 'unlimited' && hasMamaScanUnlimited && currentPlan === 'unlimited');
+    (selectedPlan === 'unlimited' && hasKidlensUnlimited && currentPlan === 'unlimited');
 
   const onContinue = async () => {
     if (selectedPlan === 'free') {
@@ -118,7 +117,7 @@ export default function PaywallScreen() {
       return;
     }
 
-    if (hasMamaScanUnlimited) {
+    if (hasKidlensUnlimited) {
       await setPlan('unlimited');
       void refreshCustomerInfo();
       if (isScanLockedSource) {
@@ -140,15 +139,18 @@ export default function PaywallScreen() {
 
     setRcBusy(true);
     try {
-      const result = await presentPaywall();
+      const info = await purchaseMonthlyPackage();
       await refreshCustomerInfo();
-      if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
+      if (hasKidlensUnlimitedAccess(info)) {
         if (isScanLockedSource) {
           console.log('purchase_completed_from_scan');
         }
         router.back();
       }
     } catch (e) {
+      if (isUserCancelledPurchaseError(e)) {
+        return;
+      }
       Alert.alert('Subscription', purchasesErrorMessage(e));
     } finally {
       setRcBusy(false);
@@ -163,7 +165,7 @@ export default function PaywallScreen() {
     try {
       const info = await restorePurchases();
       await load();
-      if (isScanLockedSource && hasMamaScanUnlimitedAccess(info)) {
+      if (isScanLockedSource && hasKidlensUnlimitedAccess(info)) {
         console.log('purchase_completed_from_scan');
         router.back();
         return;
@@ -177,7 +179,7 @@ export default function PaywallScreen() {
   }, [isNativeStoreSupported, restorePurchases, load, isScanLockedSource]);
 
   const showContinueSpinner =
-    rcBusy && selectedPlan === 'unlimited' && !hasMamaScanUnlimited && isNativeStoreSupported;
+    rcBusy && selectedPlan === 'unlimited' && !hasKidlensUnlimited && isNativeStoreSupported;
   const visibleLastError = lastError && !isMissingRevenueCatApiKeyMessage(lastError) ? lastError : null;
   const scanLockedHeroTitle =
     childAgeYears == null
@@ -412,10 +414,10 @@ export default function PaywallScreen() {
         >
           {showContinueSpinner ? <ActivityIndicator color={M.cream} /> : null}
           <Text style={{ color: M.cream, fontSize: 17, fontWeight: '700' }}>
-            {continueDisabled
-              ? t('pay.currentSelection', lang)
-              : isScanLockedSource
-                ? 'Start Free Trial — No Charge Today'
+            {showContinueSpinner
+              ? 'Starting trial...'
+              : continueDisabled
+                ? t('pay.currentSelection', lang)
                 : 'Start Free Trial — No Charge Today'}
           </Text>
         </Pressable>
@@ -434,7 +436,7 @@ export default function PaywallScreen() {
           </Pressable>
         ) : null}
 
-        {hasMamaScanUnlimited && isNativeStoreSupported ? (
+        {hasKidlensUnlimited && isNativeStoreSupported ? (
           <Pressable
             onPress={() => router.push('/customer-center' as Href)}
             disabled={rcBusy}

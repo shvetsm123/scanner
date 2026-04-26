@@ -1,5 +1,5 @@
 /**
- * MamaScan — calm premium palette (warm cream / soft sage / ink).
+ * Kidlens AI — calm premium palette (warm cream / soft sage / ink).
  * Use for screens, cards, and controls; keep scanner/camera UI dark where needed.
  */
 export const M = {
