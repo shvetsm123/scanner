@@ -154,9 +154,9 @@ export default function PreferencesScreen() {
       <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 20,
+          paddingHorizontal: 24,
           paddingTop: 4,
-          paddingBottom: 36,
+          paddingBottom: 96,
         }}
         keyboardShouldPersistTaps="handled"
       >
@@ -175,34 +175,51 @@ export default function PreferencesScreen() {
           <Text style={{ fontSize: 17, color: M.textMuted, fontWeight: '700', marginRight: 6 }}>←</Text>
           <Text style={{ fontSize: 16, color: M.textMuted, fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
-        <Text style={{ fontSize: 28, lineHeight: 34, fontWeight: '700', color: M.text }}>{t('prefs.title', lang)}</Text>
-        <Text style={{ marginTop: 8, fontSize: 15, lineHeight: 22, color: M.textMuted }}>
-          {t('prefs.subtitle', lang)}
+        <Text style={{ fontSize: 30, lineHeight: 36, fontWeight: '700', color: M.text }}>Preferences</Text>
+        <Text style={{ marginTop: 7, fontSize: 15, lineHeight: 21, color: M.textMuted }}>
+          Personalize checks for your child
         </Text>
 
-        <View style={{ marginTop: 28 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: M.text }}>{t('prefs.childBirthdate', lang)}</Text>
-          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: M.textMuted }}>{t('prefs.childBirthdateHelp', lang)}</Text>
-          <Pressable
-            onPress={openPicker}
+        <Pressable
+          onPress={openPicker}
+          style={{
+            marginTop: 24,
+            backgroundColor: M.bgCard,
+            borderRadius: M.r20,
+            paddingVertical: 18,
+            paddingHorizontal: 18,
+            borderWidth: 1,
+            borderColor: M.line,
+            ...M.shadowSoft,
+          }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: '800', color: M.text }}>Child profile</Text>
+          <View
             style={{
               marginTop: 14,
-              backgroundColor: M.bgCard,
-              borderRadius: M.r20,
-              paddingVertical: 18,
+              backgroundColor: M.sageWash,
+              borderRadius: M.r18,
+              paddingVertical: 16,
               paddingHorizontal: 16,
               borderWidth: 1,
-              borderColor: M.line,
-              ...M.shadowSoft,
+              borderColor: M.lineSage,
             }}
           >
-            <Text style={{ fontSize: 18, fontWeight: '700', color: M.text }}>{formatLocalDateToIso(dob)}</Text>
-            <Text style={{ marginTop: 6, fontSize: 14, color: M.textMuted }}>{t('age.tapToChange', lang)}</Text>
-            <Text style={{ marginTop: 10, fontSize: 14, color: M.textBody, lineHeight: 20 }}>
-              {t('prefs.childAgeNow', lang, { label: profilePreview.ageDisplayLabel })}
+            <Text style={{ fontSize: 13, fontWeight: '800', color: M.textMuted }}>Date of birth</Text>
+            <Text style={{ marginTop: 7, fontSize: 22, lineHeight: 28, fontWeight: '800', color: M.text }}>
+              {formatLocalDateToIso(dob)}
             </Text>
-          </Pressable>
-        </View>
+            <Text style={{ marginTop: 6, fontSize: 15, color: M.textBody, lineHeight: 21, fontWeight: '700' }}>
+              About {profilePreview.ageDisplayLabel} old
+            </Text>
+            <Text style={{ marginTop: 10, fontSize: 13, color: M.textMuted, lineHeight: 18 }}>
+              Tap to edit
+            </Text>
+          </View>
+          <Text style={{ marginTop: 12, fontSize: 13, color: M.textMuted, lineHeight: 19 }}>
+            Used to tailor product safety analysis
+          </Text>
+        </Pressable>
 
         {iosPickerOpen && Platform.OS === 'ios' ? (
           <View
@@ -237,10 +254,23 @@ export default function PreferencesScreen() {
           </View>
         ) : null}
 
-        <View style={{ marginTop: 32 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: M.text }}>{t('prefs.avoidList', lang)}</Text>
-          <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: M.textMuted }}>{t('prefs.avoidHelp', lang)}</Text>
-          <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        <View
+          style={{
+            marginTop: 18,
+            backgroundColor: M.bgCard,
+            borderRadius: M.r20,
+            paddingVertical: 18,
+            paddingHorizontal: 18,
+            borderWidth: 1,
+            borderColor: M.line,
+            ...M.shadowSoft,
+          }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: '800', color: M.text }}>Ingredients to avoid</Text>
+          <Text style={{ marginTop: 7, fontSize: 14, lineHeight: 20, color: M.textMuted }}>
+            Select what matters for your family
+          </Text>
+          <View style={{ marginTop: 18, flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 12 }}>
             {AVOID_PREFERENCE_OPTIONS.map((item) => {
               const selected = avoidList.includes(item.id);
               return (
@@ -248,15 +278,18 @@ export default function PreferencesScreen() {
                   key={item.id}
                   onPress={() => toggleAvoid(item.id)}
                   style={{
-                    paddingVertical: 11,
-                    paddingHorizontal: 14,
+                    minHeight: 44,
+                    paddingVertical: 12,
+                    paddingHorizontal: 15,
                     borderRadius: 999,
-                    backgroundColor: selected ? M.bgChipSelected : M.bgCard,
+                    backgroundColor: selected ? '#FCEAEA' : M.bgChip,
                     borderWidth: 1,
-                    borderColor: selected ? M.gold : M.line,
+                    borderColor: selected ? '#B65A5A' : M.line,
+                    justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: selected ? M.text : M.textBody }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: selected ? '#7A2E2E' : M.textBody }}>
+                    {selected ? '✕ ' : ''}
                     {avoidLabel(item.id, lang)}
                   </Text>
                 </Pressable>
@@ -264,28 +297,40 @@ export default function PreferencesScreen() {
             })}
           </View>
         </View>
-
+        <Text style={{ marginTop: 18, fontSize: 13, lineHeight: 19, color: M.textMuted, textAlign: 'center' }}>
+          You can update this anytime
+        </Text>
+      </ScrollView>
+      <View
+        style={{
+          paddingHorizontal: 24,
+          paddingTop: 12,
+          paddingBottom: 18,
+          backgroundColor: M.bgPage,
+          borderTopWidth: 1,
+          borderTopColor: M.line,
+        }}
+      >
         <Pressable
           onPress={onSave}
           disabled={saving}
           style={{
-            marginTop: 36,
             borderRadius: M.r16,
             backgroundColor: saving ? M.textMuted : M.inkButton,
             paddingVertical: 16,
             alignItems: 'center',
-            ...M.shadowSoft,
+            ...(!saving ? M.shadowSoft : {}),
           }}
         >
-          <Text style={{ fontSize: 16, fontWeight: '700', color: M.cream }}>
-            {saving ? t('prefs.saving', lang) : t('prefs.save', lang)}
+          <Text style={{ fontSize: 17, fontWeight: '700', color: M.cream }}>
+            {saving ? t('prefs.saving', lang) : 'Save preferences'}
           </Text>
         </Pressable>
 
-        <Pressable onPress={onCancel} disabled={saving} style={{ marginTop: 16, paddingVertical: 12, alignItems: 'center' }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: M.textSoft }}>{t('common.cancel', lang)}</Text>
+        <Pressable onPress={onCancel} disabled={saving} style={{ marginTop: 10, paddingVertical: 10, alignItems: 'center' }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: M.textSoft }}>{t('common.cancel', lang)}</Text>
         </Pressable>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
