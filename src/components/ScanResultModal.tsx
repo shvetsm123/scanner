@@ -1,16 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
+import { getSupabase, submitAiResultReport } from '../api/supabase';
+import { getOrCreateDeviceId } from '../lib/device';
 import { formatIngredientNameForLang, polishIngredientNote } from '../lib/ingredientDisplay';
 import { avoidLabel, getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
 import { localizeResultLine } from '../lib/localizeScanText';
+import { getCachedSupabaseProfileId, getChildBirthdate, getResultStyle } from '../lib/storage';
 import { AVOID_PREFERENCE_IDS, type AvoidPreference, type Plan } from '../types/preferences';
 import type { AppLanguage } from '../lib/deviceLanguage';
 import type { RecentScan, Verdict } from '../types/scan';
 import { M } from '../../constants/mamaTheme';
 import { selectDistinctDisplayReasons } from '../lib/scanResultAntiRepeat';
 type ResultTab = 'general' | 'ingredients';
+
+const REPORT_REASONS = [
+  'Wrong verdict',
+  'Wrong ingredients',
+  'Product info is wrong',
+  'Other',
+] as const;
+
+type ReportReason = (typeof REPORT_REASONS)[number];
 
 function preferenceMatchDisplayLine(line: string, lang: AppLanguage): string {
   const t0 = line.trim();
@@ -166,9 +178,19 @@ export function ScanResultModal({
 }: ScanResultModalProps) {
   const lang = getAppLanguage();
   const [tab, setTab] = useState<ResultTab>('general');
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState<ReportReason>(REPORT_REASONS[0]);
+  const [reportNote, setReportNote] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportFeedback, setReportFeedback] = useState<'success' | 'error' | null>(null);
 
   useEffect(() => {
     setTab('general');
+    setReportModalVisible(false);
+    setReportReason(REPORT_REASONS[0]);
+    setReportNote('');
+    setReportSubmitting(false);
+    setReportFeedback(null);
   }, [scan?.id]);
 
   useEffect(() => {
@@ -228,6 +250,68 @@ export function ScanResultModal({
     scan.verdict === 'unknown' &&
     String(scan.productName ?? '').trim() === 'Unknown product';
 
+  const openReportModal = () => {
+    setReportFeedback(null);
+    setReportModalVisible(true);
+  };
+
+  const closeReportModal = () => {
+    if (reportSubmitting) {
+      return;
+    }
+    setReportModalVisible(false);
+  };
+
+  const handleSendReport = async () => {
+    if (!scan || reportSubmitting) {
+      return;
+    }
+    const client = getSupabase();
+    if (!client) {
+      setReportFeedback('error');
+      return;
+    }
+
+    setReportSubmitting(true);
+    setReportFeedback(null);
+    try {
+      const [profileId, deviceId, childBirthdate, resultStyle] = await Promise.all([
+        getCachedSupabaseProfileId(),
+        getOrCreateDeviceId(),
+        getChildBirthdate(),
+        getResultStyle(),
+      ]);
+
+      await submitAiResultReport(client, {
+        profile_id: profileId,
+        device_id: deviceId,
+        barcode: scan.barcode?.trim() || null,
+        product_name: scan.productName?.trim() || null,
+        brand: scan.brand?.trim() || null,
+        reason: reportReason,
+        note: reportNote.trim() || null,
+        result: scan,
+        preferences: {
+          child_age: childAge,
+          child_birthdate: childBirthdate,
+          avoid_preferences: avoidPreferences,
+          result_style: resultStyle,
+          plan,
+        },
+      });
+
+      setReportFeedback('success');
+      setReportModalVisible(false);
+      setReportNote('');
+      setReportReason(REPORT_REASONS[0]);
+    } catch (err) {
+      console.warn('[AIResultReport] submit failed', err);
+      setReportFeedback('error');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   const tabBtn = (id: ResultTab, label: string) => (
     <Pressable
       key={id}
@@ -254,6 +338,7 @@ export function ScanResultModal({
   );
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -289,25 +374,8 @@ export function ScanResultModal({
           >
             {isUnknownNotFound ? (
               <>
-                <View
-                  style={{
-                    alignSelf: 'flex-start',
-                    borderRadius: 999,
-                    backgroundColor: M.sageWash,
-                    borderWidth: 1,
-                    borderColor: M.lineSage,
-                    paddingHorizontal: 11,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: M.sageDeep, fontWeight: '800' }}>AI scan result</Text>
-                </View>
-                <Text style={{ marginTop: 9, fontSize: 12, lineHeight: 18, color: M.textMuted }}>
-                  AI can make mistakes. Use this as guidance, not medical advice.
-                </Text>
                 <Text
                   style={{
-                    marginTop: 16,
                     fontSize: 26,
                     lineHeight: 32,
                     color: M.text,
@@ -325,26 +393,9 @@ export function ScanResultModal({
               </>
             ) : (
               <>
-                <View
-                  style={{
-                    alignSelf: 'flex-start',
-                    borderRadius: 999,
-                    backgroundColor: M.sageWash,
-                    borderWidth: 1,
-                    borderColor: M.lineSage,
-                    paddingHorizontal: 11,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: M.sageDeep, fontWeight: '800' }}>AI scan result</Text>
-                </View>
-                <Text style={{ marginTop: 9, fontSize: 12, lineHeight: 18, color: M.textMuted }}>
-                  AI can make mistakes. Use this as guidance, not medical advice.
-                </Text>
                 {reuseNotice ? (
                   <View
                     style={{
-                      marginTop: 12,
                       paddingVertical: 8,
                       paddingHorizontal: 12,
                       borderRadius: 12,
@@ -517,6 +568,30 @@ export function ScanResultModal({
                 )}
               </>
             )}
+            <View
+              style={{
+                marginTop: 18,
+                alignItems: 'center',
+              }}
+            >
+              <Pressable
+                onPress={openReportModal}
+                disabled={!scan}
+                accessibilityRole="button"
+                style={{ opacity: scan ? 1 : 0.5 }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#8B3A3A' }}>Report issue</Text>
+              </Pressable>
+              <Text style={{ marginTop: 7, fontSize: 11, lineHeight: 16, color: M.textMuted, textAlign: 'center' }}>
+                AI may be wrong. Use this as guidance, not medical advice.
+              </Text>
+              {reportFeedback === 'success' ? (
+                <Text style={{ marginTop: 7, fontSize: 12, lineHeight: 18, color: M.sageDeep, fontWeight: '700' }}>
+                  Thanks — we’ll review this result.
+                </Text>
+              ) : null}
+            </View>
           </ScrollView>
           <View
             style={{
@@ -559,5 +634,128 @@ export function ScanResultModal({
         </View>
       </View>
     </Modal>
+    <Modal
+      visible={reportModalVisible}
+      transparent
+      animationType="slide"
+      {...(Platform.OS === 'ios' ? { presentationStyle: 'overFullScreen' as const } : {})}
+      onRequestClose={closeReportModal}
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: M.overlay,
+          justifyContent: 'flex-end',
+        }}
+      >
+        <Pressable style={{ flex: 1 }} onPress={closeReportModal} />
+        <View
+          style={{
+            borderTopLeftRadius: M.r24,
+            borderTopRightRadius: M.r24,
+            backgroundColor: M.bgPage,
+            paddingHorizontal: 22,
+            paddingTop: 22,
+            paddingBottom: 22,
+            ...M.shadowCard,
+          }}
+        >
+          <Text style={{ fontSize: 22, lineHeight: 28, color: M.text, fontWeight: '800' }}>Report this result</Text>
+          <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 20, color: M.textMuted }}>What seems wrong?</Text>
+
+          <View style={{ marginTop: 18, gap: 9 }}>
+            {REPORT_REASONS.map((reason) => {
+              const selected = reportReason === reason;
+              return (
+                <Pressable
+                  key={reason}
+                  onPress={() => setReportReason(reason)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  style={{
+                    borderRadius: M.r16,
+                    borderWidth: 1,
+                    borderColor: selected ? M.lineSage : M.line,
+                    backgroundColor: selected ? M.sageWash : M.bgCardMuted,
+                    paddingVertical: 13,
+                    paddingHorizontal: 14,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
+                >
+                  <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: M.textBody }}>{reason}</Text>
+                  {selected ? <Ionicons name="checkmark-circle" size={20} color={M.sageDeep} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <TextInput
+            value={reportNote}
+            onChangeText={setReportNote}
+            placeholder="Add a note (optional)"
+            placeholderTextColor={M.textSoft}
+            multiline
+            textAlignVertical="top"
+            style={{
+              marginTop: 16,
+              minHeight: 92,
+              borderRadius: M.r16,
+              borderWidth: 1,
+              borderColor: M.line,
+              backgroundColor: M.bgCardMuted,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              fontSize: 14,
+              lineHeight: 20,
+              color: M.text,
+            }}
+          />
+
+          {reportFeedback === 'error' ? (
+            <Text style={{ marginTop: 10, fontSize: 13, lineHeight: 19, color: '#8B3A3A', fontWeight: '700' }}>
+              Couldn’t send report. Please try again.
+            </Text>
+          ) : null}
+
+          <View style={{ marginTop: 18, flexDirection: 'row', gap: 10 }}>
+            <Pressable
+              onPress={closeReportModal}
+              disabled={reportSubmitting}
+              style={{
+                flex: 1,
+                borderRadius: M.r16,
+                backgroundColor: M.bgChipSelected,
+                alignItems: 'center',
+                paddingVertical: 14,
+                opacity: reportSubmitting ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: M.textBody }}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleSendReport}
+              disabled={reportSubmitting || !scan}
+              style={{
+                flex: 1,
+                borderRadius: M.r16,
+                backgroundColor: M.inkButton,
+                alignItems: 'center',
+                paddingVertical: 14,
+                opacity: reportSubmitting || !scan ? 0.6 : 1,
+                ...M.shadowSoft,
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: M.cream }}>
+                {reportSubmitting ? 'Sending...' : 'Send report'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }

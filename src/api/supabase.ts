@@ -351,6 +351,38 @@ export async function insertScanHistory(
   }
 }
 
+export type AiResultReportPayload = {
+  profile_id: string | null;
+  device_id: string | null;
+  barcode: string | null;
+  product_name: string | null;
+  brand: string | null;
+  reason: string;
+  note: string | null;
+  result: unknown;
+  preferences: unknown;
+};
+
+export async function submitAiResultReport(
+  client: SupabaseClient,
+  payload: AiResultReportPayload,
+): Promise<void> {
+  const { error } = await client.from('ai_result_reports').insert({
+    profile_id: payload.profile_id,
+    device_id: payload.device_id,
+    barcode: payload.barcode,
+    product_name: payload.product_name,
+    brand: payload.brand,
+    reason: payload.reason,
+    note: payload.note,
+    result: payload.result,
+    preferences: payload.preferences,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
 export async function persistSuccessfulScanHistory(
   client: SupabaseClient,
   profileId: string,
