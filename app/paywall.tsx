@@ -27,6 +27,11 @@ function parsePlanQueryParam(raw: string | string[] | undefined): Plan | null {
   return null;
 }
 
+function isMissingRevenueCatApiKeyMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('missing') && lower.includes('revenuecat') && lower.includes('api') && lower.includes('key');
+}
+
 export default function PaywallScreen() {
   const lang = getAppLanguage();
   const params = useLocalSearchParams<{ plan?: string | string[]; source?: string | string[] }>();
@@ -47,21 +52,17 @@ export default function PaywallScreen() {
   const isEffectivelyUnlimited = hasMamaScanUnlimited || currentPlan === 'unlimited';
   const isEffectivelyFree = !isEffectivelyUnlimited;
 
-  const freeFeatures = useMemo(
+  const upgradeBenefits = useMemo(
     () => [
-      t('pay.feat.daily2', lang),
-      t('pay.feat.less', lang),
-      t('pay.feat.more', lang),
-      t('pay.feat.ai', lang),
-      t('pay.feat.products', lang),
+      'Unlimited scans',
+      'Full ingredient analysis',
+      'Kid-safe recommendations',
+      'Personalized by age',
+      'Save favorite products',
     ],
-    [lang],
+    [],
   );
-  const unlimitedFeatures = useMemo(() => [t('pay.feat.unlimScans', lang), t('pay.feat.favorites', lang)], [lang]);
-  const comingFeatures = useMemo(
-    () => [t('pay.coming.f1', lang), t('pay.coming.f2', lang), t('pay.coming.f3', lang)],
-    [lang],
-  );
+  const upgradeOffer = useMemo(() => ['3-day free trial', 'Then $9.99/month', 'Cancel anytime'], []);
   const scanLockedBenefits = useMemo(
     () => ['Sugar safety level', 'Hidden additives explained', 'Is it safe for your child?', 'Personalized by age'],
     [],
@@ -157,10 +158,6 @@ export default function PaywallScreen() {
     }
   };
 
-  const onComingSoonPress = useCallback(() => {
-    Alert.alert(t('alert.coming.title', lang), t('alert.coming.msg', lang));
-  }, [lang]);
-
   const onRestorePurchases = useCallback(async () => {
     if (!isNativeStoreSupported) {
       return;
@@ -182,10 +179,15 @@ export default function PaywallScreen() {
     }
   }, [isNativeStoreSupported, restorePurchases, load, isScanLockedSource]);
 
-  const freeSelected = selectedPlan === 'free';
-  const unlimitedSelected = selectedPlan === 'unlimited';
   const showContinueSpinner =
     rcBusy && selectedPlan === 'unlimited' && !hasMamaScanUnlimited && isNativeStoreSupported;
+  const visibleLastError = lastError && !isMissingRevenueCatApiKeyMessage(lastError) ? lastError : null;
+
+  useEffect(() => {
+    if (lastError && isMissingRevenueCatApiKeyMessage(lastError)) {
+      console.warn('[paywall] RevenueCat API key is missing; hiding setup warning from UI.');
+    }
+  }, [lastError]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: M.bgPage }} edges={['top', 'left', 'right']}>
@@ -215,7 +217,7 @@ export default function PaywallScreen() {
         </Pressable>
 
         <Text style={{ fontSize: 30, lineHeight: 36, color: M.text, fontWeight: '700' }}>
-          {isScanLockedSource ? '🔍 Barcode detected' : t('pay.title', lang)}
+          {isScanLockedSource ? '🔍 Barcode detected' : 'Upgrade to Unlimited'}
         </Text>
         {isScanLockedSource ? (
           <>
@@ -278,140 +280,37 @@ export default function PaywallScreen() {
           </>
         ) : (
           <>
-            <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: M.textBody }}>{t('pay.subtitle', lang)}</Text>
+            <Text style={{ marginTop: 10, fontSize: 16, lineHeight: 24, color: M.textBody }}>
+              Scan without limits. Get instant ingredient analysis personalized for your child.
+            </Text>
 
             <View
               style={{
-                marginTop: 20,
-                paddingVertical: 14,
-                paddingHorizontal: 16,
-                borderRadius: M.r16,
-                backgroundColor: M.sageWash,
+                marginTop: 22,
+                padding: 20,
+                borderRadius: M.r22,
+                backgroundColor: M.bgCard,
                 borderWidth: 1,
-                borderColor: M.lineSage,
+                borderColor: M.gold,
+                ...M.shadowCard,
               }}
             >
-              <Text style={{ fontSize: 14, fontWeight: '700', color: M.sageDeep }}>
-                {t('pay.current', lang)}{' '}
-                {isEffectivelyUnlimited ? t('pay.planUnlimited', lang) : t('pay.planFree', lang)}
-              </Text>
-              <Text style={{ marginTop: 6, fontSize: 13, color: M.sage, lineHeight: 18 }}>{t('pay.switchHint', lang)}</Text>
-            </View>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: M.textMuted }}>Unlimited includes</Text>
+              <View style={{ marginTop: 14, gap: 9 }}>
+                {upgradeBenefits.map((line) => (
+                  <Text key={line} style={{ fontSize: 16, lineHeight: 23, color: M.textBody, fontWeight: '700' }}>
+                    • {line}
+                  </Text>
+                ))}
+              </View>
 
-            <View style={{ marginTop: 24, gap: 14 }}>
-              <Pressable
-                onPress={() => setSelectedPlan('free')}
-                style={{
-                  backgroundColor: M.bgCard,
-                  borderRadius: M.r22,
-                  padding: 20,
-                  borderWidth: 2,
-                  borderColor: freeSelected ? M.gold : M.line,
-                  ...(freeSelected ? M.shadowCard : { ...M.shadowSoft, shadowOpacity: 0.06, elevation: 1 }),
-                }}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    <Text style={{ fontSize: 22, fontWeight: '800', color: M.text }}>{t('pay.free.title', lang)}</Text>
-                    <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: M.textMuted }}>{t('pay.free.sub', lang)}</Text>
-                  </View>
-                  {isEffectivelyFree ? (
-                    <View
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        borderRadius: 999,
-                        backgroundColor: M.sageWash,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: M.sageDeep }}>{t('pay.badge.current', lang)}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <View style={{ marginTop: 16, gap: 8 }}>
-                  {freeFeatures.map((f) => (
-                    <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: M.textBody, fontWeight: '600' }}>
-                      • {f}
-                    </Text>
-                  ))}
-                </View>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setSelectedPlan('unlimited')}
-                style={{
-                  backgroundColor: M.bgCard,
-                  borderRadius: M.r22,
-                  padding: 20,
-                  borderWidth: 2,
-                  borderColor: unlimitedSelected ? M.gold : M.line,
-                  ...(unlimitedSelected ? M.shadowCard : { ...M.shadowSoft, shadowOpacity: 0.06, elevation: 1 }),
-                }}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    <Text style={{ fontSize: 22, fontWeight: '800', color: M.text }}>{t('pay.unlimited.title', lang)}</Text>
-                    <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: M.textMuted }}>
-                      {t('pay.unlimited.sub', lang)}
-                    </Text>
-                  </View>
-                  {isEffectivelyUnlimited ? (
-                    <View
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        borderRadius: 999,
-                        backgroundColor: M.sageWash,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: M.sageDeep }}>{t('pay.badge.current', lang)}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <View style={{ marginTop: 16, gap: 8 }}>
-                  {unlimitedFeatures.map((f) => (
-                    <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: M.textBody, fontWeight: '600' }}>
-                      • {f}
-                    </Text>
-                  ))}
-                </View>
-              </Pressable>
-
-              <Pressable
-                onPress={onComingSoonPress}
-                style={{
-                  backgroundColor: M.bgCardMuted,
-                  borderRadius: M.r22,
-                  padding: 20,
-                  borderWidth: 1,
-                  borderColor: M.line,
-                  opacity: 0.92,
-                }}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    <Text style={{ fontSize: 22, fontWeight: '800', color: M.textSoft }}>{t('pay.coming.title', lang)}</Text>
-                    <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 22, color: M.textSoft }}>{t('pay.coming.sub', lang)}</Text>
-                  </View>
-                  <View
-                    style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      borderRadius: 999,
-                      backgroundColor: M.bgChipSelected,
-                    }}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: M.textMuted }}>{t('pay.coming.badge', lang)}</Text>
-                  </View>
-                </View>
-                <View style={{ marginTop: 16, gap: 8 }}>
-                  {comingFeatures.map((f) => (
-                    <Text key={f} style={{ fontSize: 15, lineHeight: 22, color: M.textSoft, fontWeight: '600' }}>
-                      • {f}
-                    </Text>
-                  ))}
-                </View>
-              </Pressable>
+              <View style={{ marginTop: 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: M.line, gap: 8 }}>
+                {upgradeOffer.map((line) => (
+                  <Text key={line} style={{ fontSize: 16, lineHeight: 23, color: M.text, fontWeight: '800' }}>
+                    • {line}
+                  </Text>
+                ))}
+              </View>
             </View>
           </>
         )}
@@ -445,7 +344,7 @@ export default function PaywallScreen() {
         >
           {showContinueSpinner ? <ActivityIndicator color={M.cream} /> : null}
           <Text style={{ color: M.cream, fontSize: 17, fontWeight: '700' }}>
-            {isScanLockedSource ? 'Start Free Trial' : continueDisabled ? t('pay.currentSelection', lang) : t('pay.continue', lang)}
+            {continueDisabled ? t('pay.currentSelection', lang) : 'Start Free Trial'}
           </Text>
         </Pressable>
 
@@ -455,8 +354,14 @@ export default function PaywallScreen() {
           </Text>
         ) : null}
 
-        {lastError ? (
-          <Text style={{ marginTop: 10, fontSize: 13, lineHeight: 18, color: '#A94442', textAlign: 'center' }}>{lastError}</Text>
+        {!isScanLockedSource ? (
+          <Text style={{ marginTop: 8, fontSize: 13, lineHeight: 18, color: M.textMuted, textAlign: 'center', fontWeight: '700' }}>
+            No charge today
+          </Text>
+        ) : null}
+
+        {visibleLastError ? (
+          <Text style={{ marginTop: 10, fontSize: 13, lineHeight: 18, color: '#A94442', textAlign: 'center' }}>{visibleLastError}</Text>
         ) : null}
 
         {isNativeStoreSupported ? (
