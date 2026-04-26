@@ -31,8 +31,9 @@ function hasProductImageUrl(value: unknown): boolean {
 type RecentScanCardProps = {
   scan: RecentScan;
   onPress: (scanId: string) => void;
-  onSave: (scan: RecentScan) => void;
+  onSave: (scan: RecentScan, nextSaved: boolean) => void | boolean | Promise<boolean>;
   onDelete: (scan: RecentScan) => void;
+  isSaved?: boolean;
 };
 
 function cardToneForVerdict(verdict: RecentScan['verdict']): { bg: string; border: string } {
@@ -52,6 +53,7 @@ const ACTION_WIDTH = 90;
 const ACTION_THRESHOLD = ACTION_WIDTH / 2;
 const VELOCITY_THRESHOLD = 700;
 const ACTION_FADE_START = 20;
+const CARD_RADIUS = M.r18;
 
 function RecentScanCardBody({ scan }: { scan: RecentScan }) {
   return (
@@ -75,9 +77,10 @@ function RecentScanCardBody({ scan }: { scan: RecentScan }) {
   );
 }
 
-export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCardProps) {
+export function RecentScanCard({ scan, onPress, onSave, onDelete, isSaved = false }: RecentScanCardProps) {
   const [thumbFailed, setThumbFailed] = useState(false);
   const [openAction, setOpenAction] = useState<'save' | 'delete' | null>(null);
+  const [optimisticSaved, setOptimisticSaved] = useState(isSaved);
   const translateX = useRef(new Animated.Value(0)).current;
   const openOffsetRef = useRef(0);
 
@@ -87,6 +90,10 @@ export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCa
     openOffsetRef.current = 0;
     translateX.setValue(0);
   }, [scan.id, scan.imageUrl, translateX]);
+
+  useEffect(() => {
+    setOptimisticSaved(isSaved);
+  }, [isSaved, scan.id]);
 
   const animateTo = (value: number) => {
     openOffsetRef.current = value;
@@ -101,9 +108,15 @@ export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCa
 
   const close = () => animateTo(0);
 
-  const triggerSave = () => {
+  const triggerSave = async () => {
+    const previousSaved = saved;
+    const nextSaved = !saved;
+    setOptimisticSaved(nextSaved);
     close();
-    onSave(scan);
+    const ok = await onSave(scan, nextSaved);
+    if (ok === false) {
+      setOptimisticSaved(previousSaved);
+    }
   };
 
   const triggerDelete = () => {
@@ -183,7 +196,7 @@ export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCa
   });
 
   const baseStyle = (pressed: boolean) => ({
-    borderRadius: M.r18,
+    borderRadius: CARD_RADIUS,
     backgroundColor: tone.bg,
     padding: 16,
     borderWidth: 1,
@@ -191,9 +204,21 @@ export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCa
     ...M.shadowSoft,
     opacity: pressed ? 0.92 : 1,
   });
+  const saved = optimisticSaved;
+  const saveBg = saved ? '#CBE6D5' : '#DCEFE3';
+  const saveText = saved ? 'Saved' : 'Save';
+  const saveIcon = saved ? 'heart' : 'heart-outline';
 
   return (
-    <View style={{ alignSelf: 'stretch', width: '100%', overflow: 'hidden', borderRadius: M.r18 }}>
+    <View
+      style={{
+        alignSelf: 'stretch',
+        width: '100%',
+        overflow: 'hidden',
+        borderRadius: CARD_RADIUS,
+        backgroundColor: M.bgCard,
+      }}
+    >
       <Animated.View
         pointerEvents={openAction === 'save' ? 'auto' : 'none'}
         style={{
@@ -201,17 +226,27 @@ export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCa
           top: 0,
           bottom: 0,
           left: 0,
-          width: ACTION_WIDTH,
-          backgroundColor: '#DCEFE3',
+          width: ACTION_WIDTH + CARD_RADIUS,
+          backgroundColor: saveBg,
+          borderTopLeftRadius: CARD_RADIUS,
+          borderBottomLeftRadius: CARD_RADIUS,
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 6,
           opacity: saveOpacity,
         }}
       >
-        <Pressable onPress={triggerSave} style={{ alignItems: 'center', justifyContent: 'center', flex: 1, width: '100%' }}>
-          <Ionicons name="heart" size={24} color="#2D7A4B" />
-          <Text style={{ marginTop: 5, fontSize: 13, fontWeight: '800', color: '#2D7A4B' }}>Save</Text>
+        <Pressable
+          onPress={triggerSave}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+            width: ACTION_WIDTH,
+            paddingLeft: 2,
+          }}
+        >
+          <Ionicons name={saveIcon} size={24} color="#2D7A4B" />
+          <Text style={{ marginTop: 7, fontSize: 13, fontWeight: '800', color: '#2D7A4B' }}>{saveText}</Text>
         </Pressable>
       </Animated.View>
       <Animated.View
@@ -221,16 +256,27 @@ export function RecentScanCard({ scan, onPress, onSave, onDelete }: RecentScanCa
           top: 0,
           bottom: 0,
           right: 0,
-          width: ACTION_WIDTH,
+          width: ACTION_WIDTH + CARD_RADIUS,
           backgroundColor: '#F3D8D8',
+          borderTopRightRadius: CARD_RADIUS,
+          borderBottomRightRadius: CARD_RADIUS,
           alignItems: 'center',
           justifyContent: 'center',
           opacity: deleteOpacity,
         }}
       >
-        <Pressable onPress={triggerDelete} style={{ alignItems: 'center', justifyContent: 'center', flex: 1, width: '100%' }}>
+        <Pressable
+          onPress={triggerDelete}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+            width: ACTION_WIDTH,
+            paddingRight: 2,
+          }}
+        >
           <Ionicons name="trash" size={24} color="#A33D3D" />
-          <Text style={{ marginTop: 5, fontSize: 13, fontWeight: '800', color: '#A33D3D' }}>Delete</Text>
+          <Text style={{ marginTop: 7, fontSize: 13, fontWeight: '800', color: '#A33D3D' }}>Delete</Text>
         </Pressable>
       </Animated.View>
       <PanGestureHandler

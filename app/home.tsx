@@ -90,6 +90,42 @@ function recentScanFromFavoriteItem(item: FavoriteListItem, recent: RecentScan[]
   };
 }
 
+function normalizedKeyPart(value: string | null | undefined): string {
+  return String(value ?? '').trim();
+}
+
+function favoriteKeyForScan(scan: RecentScan): string {
+  const barcode = normalizedKeyPart(scan.barcode);
+  if (barcode) {
+    return `barcode:${barcode}`;
+  }
+  return `id:${scan.id}`;
+}
+
+function favoriteKeyForItem(item: FavoriteListItem): string {
+  const barcode = normalizedKeyPart(item.barcode);
+  if (barcode) {
+    return `barcode:${barcode}`;
+  }
+  return `id:${item.productId || item.favoriteId}`;
+}
+
+function favoriteMatchesScan(item: FavoriteListItem, scan: RecentScan): boolean {
+  return favoriteKeyForItem(item) === favoriteKeyForScan(scan);
+}
+
+function optimisticFavoriteFromScan(scan: RecentScan): FavoriteListItem {
+  return {
+    favoriteId: `optimistic-${scan.id}`,
+    productId: scan.id,
+    createdAt: new Date().toISOString(),
+    barcode: scan.barcode,
+    productName: scan.productName,
+    brand: scan.brand ?? null,
+    imageUrl: scan.imageUrl ?? null,
+  };
+}
+
 function freeScanBadge(count: number): { label: string; bg: string; border: string; text: string } {
   const remaining = Math.max(0, 2 - Math.min(2, count));
   if (remaining >= 2) {
@@ -887,15 +923,24 @@ export default function HomeScreen() {
     setResultModalVisible(true);
   };
 
-  const saveScanToFavorites = async (scan: RecentScan) => {
+  const saveScanToFavorites = async (scan: RecentScan, nextSaved: boolean): Promise<boolean> => {
     if (effectivePlan !== 'unlimited') {
       setFavoriteUpsellVisible(true);
-      return;
+      return false;
     }
     if (!isSupabaseConfigured()) {
       console.warn('[home] swipe favorite: Supabase not configured');
-      return;
+      return false;
     }
+    const previousFavorites = favoritesList;
+    const existingFavorite = previousFavorites.find((item) => favoriteMatchesScan(item, scan)) ?? null;
+    setFavoritesList((current) => {
+      const exists = current.some((item) => favoriteMatchesScan(item, scan));
+      if (nextSaved) {
+        return exists ? current : [optimisticFavoriteFromScan(scan), ...current].slice(0, 5);
+      }
+      return current.filter((item) => !favoriteMatchesScan(item, scan));
+    });
     try {
       let profileId = await getCachedSupabaseProfileId();
       if (!profileId) {
@@ -905,25 +950,41 @@ export default function HomeScreen() {
       const client = getSupabase();
       if (!profileId || !client) {
         console.warn('[home] swipe favorite: missing profile or client');
-        return;
+        setFavoritesList(previousFavorites);
+        return false;
       }
-      const productId = await getOrCreateProductId(client, scan);
+      const productId = existingFavorite?.productId ?? (await getOrCreateProductId(client, scan));
       if (!productId) {
         console.warn('[home] swipe favorite: could not resolve product_id');
-        return;
+        setFavoritesList(previousFavorites);
+        return false;
       }
-      const favorited = await isFavorite(client, profileId, productId);
-      if (!favorited) {
-        const ok = await addFavorite(client, profileId, productId);
+
+      if (nextSaved) {
+        const favorited = await isFavorite(client, profileId, productId);
+        if (!favorited) {
+          const ok = await addFavorite(client, profileId, productId);
+          if (!ok) {
+            console.warn('[home] swipe favorite: add failed');
+            setFavoritesList(previousFavorites);
+            return false;
+          }
+        }
+      } else {
+        const ok = await removeFavorite(client, profileId, productId);
         if (!ok) {
-          console.warn('[home] swipe favorite: add failed');
-          return;
+          console.warn('[home] swipe favorite: remove failed');
+          setFavoritesList(previousFavorites);
+          return false;
         }
       }
       await refreshFavoritesList();
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      return true;
     } catch (err) {
       console.warn('[home] saveScanToFavorites', err);
+      setFavoritesList(previousFavorites);
+      return false;
     }
   };
 
@@ -931,13 +992,38 @@ export default function HomeScreen() {
     if (!pendingDeleteScan) {
       return;
     }
+    const scan = pendingDeleteScan;
     const scanId = pendingDeleteScan.id;
     const next = await removeRecentScanById(scanId);
+    const previousFavorites = favoritesList;
+    const matchingFavorite = previousFavorites.find((item) => favoriteMatchesScan(item, scan)) ?? null;
     setRecentScans(next);
+    if (matchingFavorite) {
+      setFavoritesList((current) => current.filter((item) => !favoriteMatchesScan(item, scan)));
+    }
     if (activeModalScanId === scanId) {
       onCloseModal();
     }
     setPendingDeleteScan(null);
+    if (matchingFavorite && isSupabaseConfigured()) {
+      try {
+        const profileId = await getCachedSupabaseProfileId();
+        const client = getSupabase();
+        if (profileId && client) {
+          const ok = await removeFavorite(client, profileId, matchingFavorite.productId);
+          if (!ok) {
+            setFavoritesList(previousFavorites);
+          } else {
+            await refreshFavoritesList();
+          }
+        } else {
+          setFavoritesList(previousFavorites);
+        }
+      } catch (err) {
+        console.warn('[home] delete recent remove favorite', err);
+        setFavoritesList(previousFavorites);
+      }
+    }
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -1223,6 +1309,7 @@ export default function HomeScreen() {
               <RecentScanCard
                 key={scan.id}
                 scan={scan}
+                isSaved={favoritesList.some((item) => favoriteMatchesScan(item, scan))}
                 onPress={openSavedScanById}
                 onSave={saveScanToFavorites}
                 onDelete={setPendingDeleteScan}
