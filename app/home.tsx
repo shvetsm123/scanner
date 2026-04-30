@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -164,6 +165,8 @@ function delay(ms: number): Promise<void> {
 export default function HomeScreen() {
   const { gatedPlan, customerInfo } = useRevenueCat();
   const lang = getAppLanguage();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrowAndroid = Platform.OS === 'android' && windowWidth < 380;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [resultModalVisible, setResultModalVisible] = useState(false);
@@ -1095,14 +1098,14 @@ export default function HomeScreen() {
       <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 20,
+          paddingHorizontal: isNarrowAndroid ? 16 : 20,
           paddingTop: 16,
           paddingBottom: 28,
           gap: 20,
         }}
       >
         <View style={{ gap: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
             <Pressable
               onPress={() => router.push('/preferences')}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -1128,7 +1131,8 @@ export default function HomeScreen() {
                   flexWrap: 'wrap',
                   flexShrink: 1,
                   gap: 8,
-                  marginLeft: 12,
+                marginLeft: 0,
+                maxWidth: Math.max(0, windowWidth - (isNarrowAndroid ? 86 : 96)),
                 }}
               >
                 <Pressable
@@ -1140,10 +1144,10 @@ export default function HomeScreen() {
                     borderColor: scanBadge.border,
                     paddingHorizontal: 11,
                     paddingVertical: 7,
-                    maxWidth: 190,
+                    maxWidth: isNarrowAndroid ? 152 : 190,
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: scanBadge.text }} numberOfLines={2}>
+                  <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '800', color: scanBadge.text }}>
                     {scanBadge.label}
                   </Text>
                 </Pressable>
@@ -1156,7 +1160,17 @@ export default function HomeScreen() {
                     backgroundColor: M.inkButton,
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: M.cream }}>Go Unlimited</Text>
+                  <Text
+                    style={{
+                      fontSize: isNarrowAndroid ? 11 : 12,
+                      lineHeight: 15,
+                      fontWeight: '800',
+                      color: M.cream,
+                      textAlign: 'center',
+                    }}
+                  >
+                    Go Unlimited
+                  </Text>
                 </Pressable>
               </View>
             ) : (
@@ -1260,7 +1274,7 @@ export default function HomeScreen() {
               >
                 <Ionicons name="barcode-outline" size={19} color={M.sageDeep} />
               </View>
-              <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: M.textBody }} numberOfLines={1}>
+              <Text style={{ flex: 1, minWidth: 0, fontSize: 15, lineHeight: 21, fontWeight: '600', color: M.textBody }}>
                 {t('home.enterBarcodeManually', lang)}
               </Text>
               <Ionicons name="chevron-forward" size={20} color={M.textSoft} />
@@ -1299,7 +1313,7 @@ export default function HomeScreen() {
             <Ionicons name="videocam-outline" size={18} color={M.textMuted} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '800', color: M.text }} numberOfLines={1}>
+            <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '800', color: M.text }}>
               Share your KidLens video
             </Text>
             <Text style={{ marginTop: 3, fontSize: 13, lineHeight: 18, fontWeight: '600', color: M.textMuted }}>
@@ -1310,7 +1324,7 @@ export default function HomeScreen() {
           </Pressable>
 
         <View style={{ gap: 12 }}>
-          <Text style={{ fontSize: 21, fontWeight: '700', color: M.text }}>Recent safety checks</Text>
+          <Text style={{ fontSize: 21, fontWeight: '700', color: M.text }}>Recent scans</Text>
 
           {recentScans.length === 0 ? (
             <>
@@ -1414,7 +1428,9 @@ export default function HomeScreen() {
               }}
             >
               <Ionicons name="lock-closed-outline" size={16} color={M.gold} />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: M.textSoft }}>{t('home.favoritesLocked', lang)}</Text>
+              <Text style={{ flexShrink: 1, fontSize: 13, lineHeight: 18, fontWeight: '600', color: M.textSoft }}>
+                {t('home.favoritesLocked', lang)}
+              </Text>
             </Pressable>
           )}
         </View>
@@ -1716,7 +1732,7 @@ export default function HomeScreen() {
             style={{
               flex: 1,
               justifyContent: 'center',
-              paddingHorizontal: 22,
+              paddingHorizontal: isNarrowAndroid ? 16 : 22,
             }}
           >
             <View
@@ -1730,7 +1746,9 @@ export default function HomeScreen() {
                 ...M.shadowCard,
               }}
             >
-              <Text style={{ fontSize: 20, fontWeight: '800', color: M.text }}>{t('home.manualBarcodeTitle', lang)}</Text>
+              <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '800', color: M.text }}>
+                {t('home.manualBarcodeTitle', lang)}
+              </Text>
               <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 20, color: M.textMuted }}>{t('home.manualBarcodeHint', lang)}</Text>
               <TextInput
                 value={manualBarcodeValue}
@@ -1754,6 +1772,7 @@ export default function HomeScreen() {
                   paddingHorizontal: 14,
                   paddingVertical: 12,
                   fontSize: 18,
+                  lineHeight: 24,
                   fontWeight: '600',
                   color: M.text,
                   backgroundColor: M.bgChip,
@@ -1775,7 +1794,9 @@ export default function HomeScreen() {
                     paddingVertical: 14,
                   }}
                 >
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: M.textBody }}>{t('home.manualBarcodeCancel', lang)}</Text>
+                  <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '700', color: M.textBody, textAlign: 'center' }}>
+                    {t('home.manualBarcodeCancel', lang)}
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={submitManualBarcode}
@@ -1788,7 +1809,9 @@ export default function HomeScreen() {
                     paddingVertical: 14,
                   }}
                 >
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: M.cream }}>{t('home.manualBarcodeFind', lang)}</Text>
+                  <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '700', color: M.cream, textAlign: 'center' }}>
+                    {t('home.manualBarcodeFind', lang)}
+                  </Text>
                 </Pressable>
               </View>
             </View>

@@ -1,8 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { M } from '../constants/mamaTheme';
 import { getAppLanguage, t } from '../src/lib/i18n';
@@ -77,7 +77,7 @@ function formatSubscriptionDate(rawDate: string | null | undefined): string | nu
   if (Number.isNaN(date.getTime())) {
     return null;
   }
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -89,6 +89,10 @@ function formatSubscriptionDate(rawDate: string | null | undefined): string | nu
 
 export default function PaywallScreen() {
   const lang = getAppLanguage();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrowAndroid = Platform.OS === 'android' && windowWidth < 380;
+  const horizontalPadding = isNarrowAndroid ? 20 : 24;
   const params = useLocalSearchParams<{ plan?: string | string[]; source?: string | string[] }>();
   const source = Array.isArray(params.source) ? params.source[0] : params.source;
   const isScanLockedSource = source === 'scan_locked';
@@ -261,9 +265,9 @@ export default function PaywallScreen() {
         <StatusBar style="dark" />
         <ScrollView
           contentContainerStyle={{
-            paddingHorizontal: 24,
+            paddingHorizontal: horizontalPadding,
             paddingTop: 12,
-            paddingBottom: 32,
+            paddingBottom: Math.max(32, insets.bottom + 20),
           }}
           keyboardShouldPersistTaps="handled"
         >
@@ -287,7 +291,7 @@ export default function PaywallScreen() {
             <View style={{ marginTop: 16, gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 14 }}>
                 <Text style={{ flex: 1, fontSize: 15, lineHeight: 21, color: M.textBody, fontWeight: '700' }}>Current plan</Text>
-                <Text style={{ fontSize: 15, lineHeight: 21, color: M.text, fontWeight: '800' }}>
+                <Text style={{ flexShrink: 1, fontSize: 15, lineHeight: 21, color: M.text, fontWeight: '800', textAlign: 'right' }}>
                   {detectedCurrentPlan ?? 'Active'}
                 </Text>
               </View>
@@ -295,7 +299,7 @@ export default function PaywallScreen() {
                 <Text style={{ flex: 1, fontSize: 15, lineHeight: 21, color: M.textBody, fontWeight: '700' }}>
                   {subscriptionDate ? subscriptionDateLabel : 'Status'}
                 </Text>
-                <Text style={{ fontSize: 15, lineHeight: 21, color: M.text, fontWeight: '800' }}>
+                <Text style={{ flexShrink: 1, fontSize: 15, lineHeight: 21, color: M.text, fontWeight: '800', textAlign: 'right' }}>
                   {subscriptionDate ?? 'Active'}
                 </Text>
               </View>
@@ -342,9 +346,9 @@ export default function PaywallScreen() {
       <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 24,
+          paddingHorizontal: horizontalPadding,
           paddingTop: 4,
-          paddingBottom: 32,
+          paddingBottom: Math.max(32, insets.bottom + 20),
         }}
         keyboardShouldPersistTaps="handled"
       >
@@ -364,7 +368,7 @@ export default function PaywallScreen() {
           <Text style={{ fontSize: 16, color: M.textMuted, fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
 
-        <Text style={{ fontSize: 30, lineHeight: 36, color: M.text, fontWeight: '700' }}>
+        <Text style={{ fontSize: isNarrowAndroid ? 27 : 30, lineHeight: isNarrowAndroid ? 33 : 36, color: M.text, fontWeight: '700' }}>
           {isScanLockedSource ? '🔍 Barcode detected' : 'Upgrade to Unlimited'}
         </Text>
         {isScanLockedSource ? (
@@ -501,7 +505,7 @@ export default function PaywallScreen() {
                     >
                       <Text style={{ fontSize: 16, fontWeight: '800', color: M.sageDeep }}>{item.icon}</Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 16, lineHeight: 23, color: M.textBody, fontWeight: '700' }}>
+                    <Text style={{ flex: 1, minWidth: 0, fontSize: 16, lineHeight: 23, color: M.textBody, fontWeight: '700' }}>
                       {item.label}
                     </Text>
                   </View>
@@ -580,9 +584,9 @@ export default function PaywallScreen() {
                     {isSelected ? <Text style={{ fontSize: 13, color: M.cream, fontWeight: '900' }}>✓</Text> : null}
                   </View>
 
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '800', color: M.text }}>{option.title}</Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <Text style={{ fontSize: 16, lineHeight: 21, fontWeight: '800', color: M.text }}>{option.title}</Text>
                       {option.badge ? (
                         <View
                           style={{
@@ -592,7 +596,9 @@ export default function PaywallScreen() {
                             paddingVertical: 3,
                           }}
                         >
-                          <Text style={{ fontSize: 10, fontWeight: '800', color: M.cream, letterSpacing: 0.35 }}>{option.badge}</Text>
+                          <Text style={{ fontSize: 10, lineHeight: 14, fontWeight: '800', color: M.cream, letterSpacing: 0.35 }}>
+                            {option.badge}
+                          </Text>
                         </View>
                       ) : null}
                     </View>
@@ -601,8 +607,10 @@ export default function PaywallScreen() {
                     </Text>
                   </View>
 
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: M.textBody }}>{option.price}</Text>
+                  <View style={{ alignItems: 'flex-end', flexShrink: 1 }}>
+                    <Text style={{ fontSize: isNarrowAndroid ? 14 : 15, lineHeight: 20, fontWeight: '800', color: M.textBody, textAlign: 'right' }}>
+                      {option.price}
+                    </Text>
                   </View>
                 </Pressable>
               );
@@ -626,7 +634,7 @@ export default function PaywallScreen() {
           }}
         >
           {showContinueSpinner ? <ActivityIndicator color={M.cream} /> : null}
-          <Text style={{ color: M.cream, fontSize: 17, fontWeight: '700' }}>
+          <Text style={{ flexShrink: 1, color: M.cream, fontSize: 17, lineHeight: 22, fontWeight: '700', textAlign: 'center' }}>
             {showContinueSpinner ? 'Starting trial...' : 'Start Free Trial — No Charge Today'}
           </Text>
         </Pressable>

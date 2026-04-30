@@ -1,5 +1,3 @@
-import * as Localization from 'expo-localization';
-
 import { barcodesEquivalent, getProductByBarcode, type NormalizedProduct } from '../api/openFoodFacts';
 import { evaluateIngredientsWithAi, evaluateProductWithAi, fetchNormalizedProductByBarcodeWithAi } from '../api/openai';
 import { buildAiInput } from './buildAiInput';
@@ -152,7 +150,7 @@ export async function buildRecentScanFromBarcode(
     emit('scan.progress.analyzing_child');
 
     const cleaned = extractCleanOffComposition(product.rawJson, product.ingredientsText, product.productName);
-    const localeHint = Localization.getLocales()?.[0]?.languageTag ?? lang;
+    const localeHint = 'en-US';
 
     const hasIngredientLines = cleaned.ingredientLines.length > 0;
     if (hasIngredientLines) {

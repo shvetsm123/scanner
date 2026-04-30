@@ -17,9 +17,10 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type DimensionValue,
   type ImageSourcePropType,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { M } from '../constants/mamaTheme';
 import {
@@ -104,7 +105,7 @@ function formatCreatedDate(rawDate: string): string {
   if (Number.isNaN(date.getTime())) {
     return '';
   }
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 }
 
 function getSubmissionStatusBadge(status: CreatorSubmission['status']): {
@@ -141,10 +142,12 @@ const ExampleVideoCard = memo(function ExampleVideoCard({
   example,
   isPlaying,
   onToggle,
+  width,
 }: {
   example: ExampleVideo;
   isPlaying: boolean;
   onToggle: (id: string) => void;
+  width: DimensionValue;
 }) {
   const player = useVideoPlayer(example.source, (videoPlayer) => {
     videoPlayer.loop = true;
@@ -165,15 +168,15 @@ const ExampleVideoCard = memo(function ExampleVideoCard({
     <Pressable
       onPress={() => onToggle(example.id)}
       style={({ pressed }) => ({
-        width: '48%',
+        width,
         opacity: pressed ? 0.78 : 1,
       })}
     >
       <View style={{ marginBottom: 7 }}>
-        <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '800', color: M.text }} numberOfLines={2}>
+        <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '800', color: M.text }}>
           {example.title}
         </Text>
-        <Text style={{ marginTop: 3, fontSize: 12, lineHeight: 17, fontWeight: '600', color: M.textMuted }} numberOfLines={2}>
+        <Text style={{ marginTop: 3, fontSize: 12, lineHeight: 17, fontWeight: '600', color: M.textMuted }}>
           {example.subtitle}
         </Text>
       </View>
@@ -257,7 +260,11 @@ export default function ShareVideoScreen() {
   const [submitted, setSubmitted] = useState(false);
   const [examplesVisible, setExamplesVisible] = useState(false);
   const [playingExampleId, setPlayingExampleId] = useState<string | null>(null);
-  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const isNarrowAndroid = Platform.OS === 'android' && windowWidth < 390;
+  const horizontalPadding = isNarrowAndroid ? 20 : 24;
+  const exampleCardWidth = isNarrowAndroid ? '100%' : '48%';
 
   const validationMessage = useMemo(
     () =>
@@ -335,9 +342,9 @@ export default function ShareVideoScreen() {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingHorizontal: 24,
+            paddingHorizontal: horizontalPadding,
             paddingTop: 4,
-            paddingBottom: 48,
+            paddingBottom: Math.max(48, insets.bottom + 28),
           }}
         >
           <Pressable
@@ -357,7 +364,14 @@ export default function ShareVideoScreen() {
             <Text style={{ fontSize: 16, color: M.textMuted, fontWeight: '600' }}>Back</Text>
           </Pressable>
 
-          <Text style={{ fontSize: 30, lineHeight: 36, fontWeight: '700', color: M.text }}>
+          <Text
+            style={{
+              fontSize: isNarrowAndroid ? 27 : 30,
+              lineHeight: isNarrowAndroid ? 33 : 36,
+              fontWeight: '700',
+              color: M.text,
+            }}
+          >
             Share your KidLens video
           </Text>
           <Text style={{ marginTop: 9, fontSize: 15, lineHeight: 22, color: M.textMuted }}>
@@ -396,7 +410,7 @@ export default function ShareVideoScreen() {
             <Ionicons name="color-palette-outline" size={18} color={M.textMuted} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '800', color: M.text }} numberOfLines={1}>
+              <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '800', color: M.text }}>
                 Need inspiration?
               </Text>
               <Text style={{ marginTop: 3, fontSize: 13, lineHeight: 18, fontWeight: '600', color: M.textMuted }}>
@@ -426,7 +440,7 @@ export default function ShareVideoScreen() {
                   setSubmitted(false);
                   setVideoUrl(value);
                 }}
-                placeholder="TikTok, Instagram Reel, or YouTube Shorts link"
+                placeholder={isNarrowAndroid ? 'Paste your video link' : 'Paste your video link'}
                 placeholderTextColor={M.textSoft}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -441,6 +455,7 @@ export default function ShareVideoScreen() {
                   paddingHorizontal: 14,
                   paddingVertical: 13,
                   fontSize: 16,
+                  lineHeight: 22,
                   color: M.text,
                   backgroundColor: M.bgChip,
                 }}
@@ -460,8 +475,9 @@ export default function ShareVideoScreen() {
                         setContactType(option.value);
                       }}
                       style={({ pressed }) => ({
-                        minWidth: '22%',
+                        flexBasis: isNarrowAndroid ? '47%' : '22%',
                         flexGrow: 1,
+                        flexShrink: 1,
                         borderRadius: M.r14,
                         borderWidth: 1,
                         borderColor: selected ? M.lineSage : M.line,
@@ -474,8 +490,10 @@ export default function ShareVideoScreen() {
                       <Text
                         style={{
                           fontSize: 13,
+                          lineHeight: 18,
                           fontWeight: '800',
                           color: selected ? M.sageDeep : M.textMuted,
+                          textAlign: 'center',
                         }}
                       >
                         {option.label}
@@ -511,6 +529,7 @@ export default function ShareVideoScreen() {
                   paddingHorizontal: 14,
                   paddingVertical: 13,
                   fontSize: 16,
+                  lineHeight: 22,
                   color: M.text,
                   backgroundColor: M.bgChip,
                 }}
@@ -538,7 +557,9 @@ export default function ShareVideoScreen() {
               {submitting ? (
                 <ActivityIndicator size="small" color={M.cream} />
               ) : (
-                <Text style={{ fontSize: 16, fontWeight: '800', color: M.cream }}>Submit video</Text>
+              <Text style={{ fontSize: 16, lineHeight: 21, fontWeight: '800', color: M.cream, textAlign: 'center' }}>
+                Submit video
+              </Text>
               )}
             </Pressable>
           </View>
@@ -599,7 +620,7 @@ export default function ShareVideoScreen() {
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '800', color: M.text }} numberOfLines={1}>
+                          <Text style={{ fontSize: 14, lineHeight: 19, fontWeight: '800', color: M.text }} numberOfLines={2}>
                             {shortenUrl(submission.video_url)}
                           </Text>
                           <Text style={{ marginTop: 6, fontSize: 12, color: M.textMuted, fontWeight: '600' }}>
@@ -643,11 +664,11 @@ export default function ShareVideoScreen() {
               borderTopRightRadius: 28,
               backgroundColor: M.bgPage,
               paddingTop: 20,
-              paddingBottom: 26,
+              paddingBottom: Math.max(26, insets.bottom + 12),
               ...M.shadowCard,
             }}
           >
-            <View style={{ paddingHorizontal: 22 }}>
+            <View style={{ paddingHorizontal: horizontalPadding }}>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 24, lineHeight: 30, fontWeight: '800', color: M.text }}>
@@ -677,7 +698,7 @@ export default function ShareVideoScreen() {
             <ScrollView
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{
-                paddingHorizontal: 22,
+                paddingHorizontal: horizontalPadding,
                 paddingTop: 18,
                 paddingBottom: 28,
                 flexDirection: 'row',
@@ -692,6 +713,7 @@ export default function ShareVideoScreen() {
                   example={example}
                   isPlaying={playingExampleId === example.id}
                   onToggle={toggleExamplePlayback}
+                  width={exampleCardWidth}
                 />
               ))}
             </ScrollView>

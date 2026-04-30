@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 
 import { ShareResultCard } from './ShareResultCard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { setAiResultReportDraft } from '../lib/aiResultReportDraft';
 import { formatIngredientNameForLang, polishIngredientNote } from '../lib/ingredientDisplay';
 import { avoidLabel, getAppLanguage, humanizePreferenceMatchLine, t } from '../lib/i18n';
@@ -169,6 +170,9 @@ export function ScanResultModal({
   reuseNotice,
 }: ScanResultModalProps) {
   const lang = getAppLanguage();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrowAndroid = Platform.OS === 'android' && windowWidth < 380;
   const shareCardRef = useRef<View>(null);
   const [tab, setTab] = useState<ResultTab>('general');
   const [shareLoading, setShareLoading] = useState(false);
@@ -276,6 +280,7 @@ export function ScanResultModal({
         style={{
           textAlign: 'center',
           fontSize: 13,
+          lineHeight: 18,
           fontWeight: '700',
           color: tab === id ? M.text : M.textMuted,
         }}
@@ -300,14 +305,14 @@ export function ScanResultModal({
           flex: 1,
           backgroundColor: M.overlay,
           justifyContent: 'center',
-          paddingHorizontal: 20,
+          paddingHorizontal: isNarrowAndroid ? 14 : 20,
         }}
       >
         <View
           style={{
             borderRadius: M.r24,
             backgroundColor: M.bgPage,
-            maxHeight: '90%',
+            maxHeight: isNarrowAndroid ? '92%' : '90%',
             overflow: 'hidden',
             ...M.shadowCard,
           }}
@@ -369,6 +374,7 @@ export function ScanResultModal({
                   <Text
                     style={{
                       flex: 1,
+                      minWidth: 0,
                       fontSize: 25,
                       lineHeight: 30,
                       color: M.text,
@@ -437,9 +443,11 @@ export function ScanResultModal({
                   ) : null}
                 </View>
                 {!!scan?.brand && (
-                  <Text style={{ marginTop: 6, fontSize: 15, color: M.textMuted, fontWeight: '600' }}>{scan.brand}</Text>
+                  <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 21, color: M.textMuted, fontWeight: '600' }}>
+                    {scan.brand}
+                  </Text>
                 )}
-                <Text style={{ marginTop: 8, fontSize: 13, color: M.textMuted }}>
+                <Text style={{ marginTop: 8, fontSize: 13, lineHeight: 18, color: M.textMuted }}>
                   {t('result.barcodeLabel', lang)} {scan?.barcode ?? '-'}
                 </Text>
 
@@ -566,7 +574,7 @@ export function ScanResultModal({
             style={{
               paddingHorizontal: 22,
               paddingTop: 12,
-              paddingBottom: 16,
+              paddingBottom: Math.max(16, insets.bottom + 10),
               borderTopWidth: 1,
               borderTopColor: M.line,
               backgroundColor: M.bgPage,
@@ -584,7 +592,9 @@ export function ScanResultModal({
                 paddingVertical: 14,
               }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: M.textBody }}>{t('common.close', lang)}</Text>
+              <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '700', color: M.textBody, textAlign: 'center' }}>
+                {t('common.close', lang)}
+              </Text>
             </Pressable>
             <Pressable
               onPress={onScanAgain}
@@ -597,7 +607,9 @@ export function ScanResultModal({
                 ...M.shadowSoft,
               }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: M.cream }}>{t('result.scanAgain', lang)}</Text>
+              <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '700', color: M.cream, textAlign: 'center' }}>
+                {t('result.scanAgain', lang)}
+              </Text>
             </Pressable>
           </View>
         </View>

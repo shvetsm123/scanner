@@ -58,8 +58,8 @@ const CARD_RADIUS = M.r18;
 function RecentScanCardBody({ scan }: { scan: RecentScan }) {
   return (
     <View style={{ width: '100%' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <Text style={{ flexShrink: 1, fontSize: 16, fontWeight: '700', color: M.text }} numberOfLines={1}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <Text style={{ flex: 1, minWidth: 0, fontSize: 16, lineHeight: 21, fontWeight: '700', color: M.text }} numberOfLines={2}>
           {scan.productName}
         </Text>
         <VerdictBadge verdict={scan.verdict} />

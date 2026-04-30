@@ -1,5 +1,4 @@
 import { fetch as expoFetch } from 'expo/fetch';
-import * as Localization from 'expo-localization';
 import { Platform } from 'react-native';
 
 import { buildOfficialGuidanceContextLines } from '../lib/officialGuidanceContext';
@@ -24,6 +23,8 @@ const MODEL = 'gpt-4o-mini';
 /** Model for Responses API + built-in web_search tool (barcode research step). */
 const BARCODE_RESPONSES_MODEL = 'gpt-4o-mini';
 const LOG_PREFIX = '[OpenAI]';
+const ENGLISH_APP_LANGUAGE = 'en' as const;
+const ENGLISH_APP_LOCALE = 'en-US';
 
 const BARCODE_LOOKUP_SYSTEM_PROMPT = `Open Food Facts missed this barcode. You MUST call web_search before answering (no memory-only answers).
 
@@ -297,7 +298,8 @@ function finalizeKidsEvaluationWithPreferences(result: AiResult, input: KidsAiIn
   );
 }
 
-export async function evaluateProductWithAi(input: KidsAiInput): Promise<AiResult> {
+export async function evaluateProductWithAi(rawInput: KidsAiInput): Promise<AiResult> {
+  const input: KidsAiInput = { ...rawInput, outputLanguage: ENGLISH_APP_LANGUAGE };
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   const keyPresent = typeof apiKey === 'string' && !!apiKey.trim();
   console.warn(LOG_PREFIX, 'EXPO_PUBLIC_OPENAI_API_KEY present:', keyPresent);
@@ -822,6 +824,7 @@ BANNED soft filler (do not use): “consume in moderation”, “in moderation�
 NOTE STYLE EXAMPLES (rewrite fully in outputLanguage only; do not copy English examples into non-English outputs): added sugar as a worst offender for a child; glucose syrup as fast sugar with almost no value; molasses as another dense sugar source; palm oil as cheap processed fat; flavouring as making the product feel artificial; lecithin as a common emulsifier, minor by itself; citric acid as a normal acid regulator; peanuts as a real ingredient but a serious allergen.`;
 
 export async function evaluateIngredientsWithAi(input: IngredientsAiInput): Promise<IngredientAiPanel | null> {
+  input = { ...input, outputLanguage: ENGLISH_APP_LANGUAGE, localeHint: ENGLISH_APP_LOCALE };
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   if (typeof apiKey !== 'string' || !apiKey.trim()) {
     console.warn(ING_LOG, 'skip: no API key');
@@ -832,15 +835,7 @@ export async function evaluateIngredientsWithAi(input: IngredientsAiInput): Prom
     console.warn(ING_LOG, 'skip: empty cleanedIngredientLines');
     return null;
   }
-  const deviceLocaleTag =
-    input.localeHint ??
-    (() => {
-      try {
-        return Localization.getLocales()?.[0]?.languageTag;
-      } catch {
-        return undefined;
-      }
-    })();
+  const deviceLocaleTag = ENGLISH_APP_LOCALE;
   console.warn(ING_LOG, 'detected app language sent to Ingredients AI pass', {
     outputLanguage: input.outputLanguage,
     outputLanguageName: OUTPUT_LANGUAGE_NAMES[input.outputLanguage],

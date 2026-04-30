@@ -2,8 +2,8 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { M } from '../constants/mamaTheme';
 import {
@@ -38,6 +38,10 @@ function minDobDate(): Date {
 
 export default function PreferencesScreen() {
   const lang = getAppLanguage();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrowAndroid = Platform.OS === 'android' && windowWidth < 380;
+  const horizontalPadding = isNarrowAndroid ? 20 : 24;
   const [ready, setReady] = useState(false);
   const [dob, setDob] = useState(defaultDobDate);
   const [iosPickerOpen, setIosPickerOpen] = useState(false);
@@ -154,9 +158,9 @@ export default function PreferencesScreen() {
       <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 24,
+          paddingHorizontal: horizontalPadding,
           paddingTop: 4,
-          paddingBottom: 24,
+          paddingBottom: 120,
         }}
         keyboardShouldPersistTaps="handled"
       >
@@ -175,7 +179,9 @@ export default function PreferencesScreen() {
           <Text style={{ fontSize: 17, color: M.textMuted, fontWeight: '700', marginRight: 6 }}>←</Text>
           <Text style={{ fontSize: 16, color: M.textMuted, fontWeight: '600' }}>{t('common.back', lang)}</Text>
         </Pressable>
-        <Text style={{ fontSize: 30, lineHeight: 36, fontWeight: '700', color: M.text }}>Preferences</Text>
+        <Text style={{ fontSize: isNarrowAndroid ? 28 : 30, lineHeight: isNarrowAndroid ? 34 : 36, fontWeight: '700', color: M.text }}>
+          Preferences
+        </Text>
         <Text style={{ marginTop: 7, fontSize: 15, lineHeight: 21, color: M.textMuted }}>
           Personalize checks for your child
         </Text>
@@ -279,6 +285,7 @@ export default function PreferencesScreen() {
                   onPress={() => toggleAvoid(item.id)}
                   style={{
                     minHeight: 44,
+                    maxWidth: '100%',
                     paddingVertical: 12,
                     paddingHorizontal: 15,
                     borderRadius: 999,
@@ -288,7 +295,7 @@ export default function PreferencesScreen() {
                     justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: selected ? '#7A2E2E' : M.textBody }}>
+                  <Text style={{ fontSize: 14, lineHeight: 19, fontWeight: '700', color: selected ? '#7A2E2E' : M.textBody }}>
                     {selected ? '✕ ' : ''}
                     {avoidLabel(item.id, lang)}
                   </Text>
@@ -303,9 +310,9 @@ export default function PreferencesScreen() {
       </ScrollView>
       <View
         style={{
-          paddingHorizontal: 24,
+          paddingHorizontal: horizontalPadding,
           paddingTop: 12,
-          paddingBottom: 18,
+          paddingBottom: Math.max(18, insets.bottom + 10),
           backgroundColor: M.bgPage,
           borderTopWidth: 1,
           borderTopColor: M.line,
@@ -322,7 +329,7 @@ export default function PreferencesScreen() {
             ...(!saving ? M.shadowSoft : {}),
           }}
         >
-          <Text style={{ fontSize: 17, fontWeight: '700', color: M.cream }}>
+          <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '700', color: M.cream, textAlign: 'center' }}>
             {saving ? t('prefs.saving', lang) : 'Save preferences'}
           </Text>
         </Pressable>
