@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  Animated,
   Keyboard,
   Modal,
   Platform,
@@ -160,6 +160,221 @@ const SCAN_LOCKED_ANALYZING_DELAY_MS = 650;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type AnalysisVisualStepId = 'database' | 'details' | 'child' | 'ingredients';
+
+const ANALYSIS_VISUAL_STEPS: { id: AnalysisVisualStepId; label: string }[] = [
+  { id: 'database', label: 'Checking food database' },
+  { id: 'details', label: 'Matching product details' },
+  { id: 'child', label: 'Analyzing for your child' },
+  { id: 'ingredients', label: 'Preparing ingredient breakdown' },
+];
+
+function deriveAnalysisVisualStep(progressKey: string | null, progressText: string): AnalysisVisualStepId {
+  const signal = `${progressKey ?? ''} ${progressText}`.toLowerCase();
+  if (signal.includes('ingredient')) {
+    return 'ingredients';
+  }
+  if (signal.includes('analyzing_child') || signal.includes('for your child') || signal.includes('your child')) {
+    return 'child';
+  }
+  if (
+    signal.includes('product_found') ||
+    signal.includes('no_match_db') ||
+    signal.includes('web_sources') ||
+    signal.includes('matching_details') ||
+    signal.includes('product found') ||
+    signal.includes('no match') ||
+    signal.includes('trusted web') ||
+    signal.includes('matching product')
+  ) {
+    return 'details';
+  }
+  return 'database';
+}
+
+function analysisOverlayTitle(progressTextOverride: string | null): string {
+  const normalized = progressTextOverride?.trim().toLowerCase() ?? '';
+  return normalized.startsWith('analyzing ingredients') ? 'Analyzing ingredients' : 'Analyzing product';
+}
+
+function ScanAnalysisOverlay({
+  title,
+  subtitle,
+  activeStep,
+}: {
+  title: string;
+  subtitle: string;
+  activeStep: AnalysisVisualStepId;
+}) {
+  const entrance = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+  const activeIndex = ANALYSIS_VISUAL_STEPS.findIndex((step) => step.id === activeStep);
+
+  useEffect(() => {
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 720,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 720,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulseLoop.start();
+    return () => {
+      pulseLoop.stop();
+    };
+  }, [entrance, pulse]);
+
+  const cardScale = entrance.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.96, 1],
+  });
+  const pulseOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.42, 1],
+  });
+  const pulseScale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.86, 1.16],
+  });
+
+  return (
+    <Animated.View
+      style={{
+        borderRadius: M.r24,
+        backgroundColor: M.bgCard,
+        paddingVertical: 24,
+        paddingHorizontal: 20,
+        width: '100%',
+        maxWidth: 340,
+        opacity: entrance,
+        transform: [{ scale: cardScale }],
+        ...M.shadowCard,
+      }}
+    >
+      <View
+        style={{
+          alignSelf: 'center',
+          width: 54,
+          height: 54,
+          borderRadius: 999,
+          backgroundColor: M.sageWash,
+          borderWidth: 1,
+          borderColor: M.lineSage,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Animated.View
+          style={{
+            position: 'absolute',
+            width: 28,
+            height: 28,
+            borderRadius: 999,
+            backgroundColor: M.sageDeep,
+            opacity: pulseOpacity,
+            transform: [{ scale: pulseScale }],
+          }}
+        />
+        <View
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: 999,
+            backgroundColor: M.sageDeep,
+          }}
+        />
+      </View>
+
+      <Text style={{ marginTop: 16, fontSize: 20, lineHeight: 26, fontWeight: '800', color: M.text, textAlign: 'center' }}>
+        {title}
+      </Text>
+      <Text style={{ marginTop: 7, fontSize: 14, lineHeight: 20, fontWeight: '600', color: M.textMuted, textAlign: 'center' }}>
+        {subtitle}
+      </Text>
+
+      <View style={{ marginTop: 20, gap: 8 }}>
+        {ANALYSIS_VISUAL_STEPS.map((step, index) => {
+          const state = index < activeIndex ? 'completed' : index === activeIndex ? 'active' : 'upcoming';
+          const isCompleted = state === 'completed';
+          const isActive = state === 'active';
+          return (
+            <View
+              key={step.id}
+              style={{
+                minHeight: 42,
+                borderRadius: M.r14,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                backgroundColor: isActive ? M.sageWash : 'transparent',
+                borderWidth: 1,
+                borderColor: isActive ? M.lineSage : 'transparent',
+              }}
+            >
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 999,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isCompleted ? M.sageDeep : isActive ? M.bgCard : M.bgChip,
+                  borderWidth: 1,
+                  borderColor: isCompleted || isActive ? M.lineSage : M.line,
+                }}
+              >
+                {isCompleted ? (
+                  <Text style={{ fontSize: 13, lineHeight: 17, fontWeight: '900', color: M.cream }}>✓</Text>
+                ) : isActive ? (
+                  <Animated.View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      backgroundColor: M.sageDeep,
+                      opacity: pulseOpacity,
+                      transform: [{ scale: pulseScale }],
+                    }}
+                  />
+                ) : (
+                  <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: M.textSoft }} />
+                )}
+              </View>
+              <Text
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 14,
+                  lineHeight: 19,
+                  fontWeight: isActive || isCompleted ? '800' : '600',
+                  color: isActive || isCompleted ? M.text : M.textSoft,
+                }}
+              >
+                {step.label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </Animated.View>
+  );
 }
 
 export default function HomeScreen() {
@@ -1089,6 +1304,9 @@ export default function HomeScreen() {
 
   const scanForResultModal = resultModalVisible ? (modalScan ?? displayScan) : null;
   const scanBadge = freeScanBadge(dailyScanState.count);
+  const scanProgressText = scanProgressTextOverride ?? (scanProgressKey ? t(scanProgressKey, lang) : t('loading.checking', lang));
+  const scanAnalysisTitle = analysisOverlayTitle(scanProgressTextOverride);
+  const activeAnalysisStep = deriveAnalysisVisualStep(scanProgressKey, scanProgressText);
 
   return (
     <SafeAreaView
@@ -1857,26 +2075,7 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <View
-            style={{
-              borderRadius: M.r20,
-              backgroundColor: M.bgCard,
-              paddingVertical: 28,
-              paddingHorizontal: 32,
-              alignItems: 'center',
-              width: '100%',
-              maxWidth: 320,
-              ...M.shadowCard,
-            }}
-          >
-            <ActivityIndicator size="large" color={M.ink} />
-            <Text style={{ marginTop: 16, fontSize: 17, fontWeight: '700', color: M.text, textAlign: 'center' }}>
-              {scanProgressTextOverride ?? (scanProgressKey ? t(scanProgressKey, lang) : t('loading.checking', lang))}
-            </Text>
-            <Text style={{ marginTop: 8, fontSize: 14, color: M.textMuted, textAlign: 'center', lineHeight: 20 }}>
-              {scanProgressKey ? t('scan.progress.subtle', lang) : t('loading.wait', lang)}
-            </Text>
-          </View>
+          <ScanAnalysisOverlay title={scanAnalysisTitle} subtitle={scanProgressText} activeStep={activeAnalysisStep} />
         </View>
       ) : null}
       {resultModalVisible && scanForResultModal ? (
