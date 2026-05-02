@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView } from 'expo-camera';
 import type { PermissionResponse } from 'expo-modules-core';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +9,7 @@ import { getAppLanguage, t } from '../lib/i18n';
 import { ScannerFrame } from './ScannerFrame';
 
 const COMMON_PRODUCT_BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'itf14'];
+const BARCODE_FOUND_FEEDBACK_MS = 240;
 
 type ScannerModalProps = {
   visible: boolean;
@@ -39,18 +40,48 @@ export function ScannerModal({
   const insets = useSafeAreaInsets();
   const granted = cameraPermission?.granted === true;
   const [torchOn, setTorchOn] = useState(false);
+  const [barcodeFound, setBarcodeFound] = useState(false);
+  const barcodeFoundRef = useRef(false);
+  const barcodeFoundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (barcodeFoundTimerRef.current) {
+      clearTimeout(barcodeFoundTimerRef.current);
+      barcodeFoundTimerRef.current = null;
+    }
+    barcodeFoundRef.current = false;
+    setBarcodeFound(false);
     if (!visible) {
       setTorchOn(false);
     }
-  }, [visible]);
+    return () => {
+      if (barcodeFoundTimerRef.current) {
+        clearTimeout(barcodeFoundTimerRef.current);
+        barcodeFoundTimerRef.current = null;
+      }
+    };
+  }, [visible, cameraInstanceKey]);
 
   const toggleTorch = useCallback(() => {
     setTorchOn((v) => !v);
   }, []);
 
-  const canReadCodes = visible && granted && !dailyLimitReached;
+  const handleBarcodeFound = useCallback(
+    (payload: { data: string }) => {
+      if (barcodeFoundRef.current || !payload?.data) {
+        return;
+      }
+      barcodeFoundRef.current = true;
+      setBarcodeFound(true);
+      barcodeFoundTimerRef.current = setTimeout(() => {
+        barcodeFoundTimerRef.current = null;
+        onBarcodeScanned({ data: payload.data });
+      }, BARCODE_FOUND_FEEDBACK_MS);
+    },
+    [onBarcodeScanned],
+  );
+
+  const canReadCodes = visible && granted && !dailyLimitReached && !barcodeFound;
 
   return (
     <Modal
@@ -96,7 +127,7 @@ export function ScannerModal({
                   facing="back"
                   enableTorch={torchOn}
                   barcodeScannerSettings={{ barcodeTypes: [...COMMON_PRODUCT_BARCODE_TYPES] as never }}
-                  onBarcodeScanned={canReadCodes ? onBarcodeScanned : undefined}
+                  onBarcodeScanned={canReadCodes ? handleBarcodeFound : undefined}
                 />
                 <View
                   pointerEvents="box-none"
@@ -158,7 +189,7 @@ export function ScannerModal({
                     </Pressable>
                   ) : null}
 
-                  <ScannerFrame />
+                  <ScannerFrame barcodeFound={barcodeFound} />
 
                   {dailyLimitReached ? (
                   <Pressable
