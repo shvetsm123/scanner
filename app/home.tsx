@@ -157,6 +157,9 @@ type PendingPostScanOutcome =
 
 const POST_SCAN_RESULT_DELAY_MS = Platform.OS === 'ios' ? 80 : 0;
 const SCAN_LOCKED_ANALYZING_DELAY_MS = 650;
+const ANALYSIS_VISUAL_STEP_MIN_MS = 500;
+const ANALYSIS_VISUAL_FINAL_MIN_MS = 400;
+const ANALYSIS_VISUAL_REVEAL_MAX_MS = 2200;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -171,13 +174,15 @@ const ANALYSIS_VISUAL_STEPS: { id: AnalysisVisualStepId; label: string }[] = [
   { id: 'ingredients', label: 'Preparing ingredient breakdown' },
 ];
 
-function deriveAnalysisVisualStep(progressKey: string | null, progressText: string): AnalysisVisualStepId {
+const ANALYSIS_VISUAL_FINAL_INDEX = ANALYSIS_VISUAL_STEPS.length - 1;
+
+function deriveAnalysisVisualTargetIndex(progressKey: string | null, progressText: string): number {
   const signal = `${progressKey ?? ''} ${progressText}`.toLowerCase();
-  if (signal.includes('ingredient')) {
-    return 'ingredients';
+  if (signal.includes('ingredient') || signal.includes('almost_ready') || signal.includes('almost ready')) {
+    return 3;
   }
   if (signal.includes('analyzing_child') || signal.includes('for your child') || signal.includes('your child')) {
-    return 'child';
+    return 2;
   }
   if (
     signal.includes('product_found') ||
@@ -189,9 +194,9 @@ function deriveAnalysisVisualStep(progressKey: string | null, progressText: stri
     signal.includes('trusted web') ||
     signal.includes('matching product')
   ) {
-    return 'details';
+    return 1;
   }
-  return 'database';
+  return 0;
 }
 
 function analysisOverlayTitle(progressTextOverride: string | null): string {
@@ -202,15 +207,15 @@ function analysisOverlayTitle(progressTextOverride: string | null): string {
 function ScanAnalysisOverlay({
   title,
   subtitle,
-  activeStep,
+  visualStepIndex,
 }: {
   title: string;
   subtitle: string;
-  activeStep: AnalysisVisualStepId;
+  visualStepIndex: number;
 }) {
   const entrance = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
-  const activeIndex = ANALYSIS_VISUAL_STEPS.findIndex((step) => step.id === activeStep);
+  const activeIndex = Math.max(0, Math.min(visualStepIndex, ANALYSIS_VISUAL_FINAL_INDEX));
 
   useEffect(() => {
     Animated.timing(entrance, {
@@ -418,6 +423,7 @@ export default function HomeScreen() {
   /** i18n key from `scan.progress.*`; shown on the scan loading overlay. */
   const [scanProgressKey, setScanProgressKey] = useState<string | null>(null);
   const [scanProgressTextOverride, setScanProgressTextOverride] = useState<string | null>(null);
+  const [analysisVisualStepIndex, setAnalysisVisualStepIndex] = useState(0);
   const [scanError, setScanError] = useState<{ title: string; message: string } | null>(null);
   const [plan, setPlan] = useState<Plan>('free');
   const effectivePlan = useMemo(() => gatedPlan(plan), [gatedPlan, plan]);
@@ -433,6 +439,14 @@ export default function HomeScreen() {
   const expectingScannerDismissHandoffRef = useRef(false);
   const scannerDismissedForHandoffRef = useRef(false);
   const scannerModalVisibleRef = useRef(false);
+  const analysisVisualStepIndexRef = useRef(0);
+  const analysisVisualTargetIndexRef = useRef(0);
+  const analysisVisualStepStartedAtRef = useRef(Date.now());
+  const analysisVisualRevealStartedAtRef = useRef<number | null>(null);
+  const analysisVisualProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const analysisVisualRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAnalysisVisualProgressRef = useRef<(() => void) | null>(null);
+  const commitPendingPostScanOutcomeFnRef = useRef<(() => void) | null>(null);
   const pendingLockedScanBarcodeRef = useRef<string | null>(null);
   const pendingLockedScanProductPreviewRef = useRef<PendingLockedScanProductPreview | null>(null);
   const handleBarcodeScannedRef = useRef<
@@ -450,15 +464,93 @@ export default function HomeScreen() {
   pendingLockedScanBarcodeRef.current = pendingLockedScanBarcode;
   pendingLockedScanProductPreviewRef.current = pendingLockedScanProductPreview;
 
+  const clearAnalysisVisualTimers = useCallback(() => {
+    if (analysisVisualProgressTimerRef.current) {
+      clearTimeout(analysisVisualProgressTimerRef.current);
+      analysisVisualProgressTimerRef.current = null;
+    }
+    if (analysisVisualRevealTimerRef.current) {
+      clearTimeout(analysisVisualRevealTimerRef.current);
+      analysisVisualRevealTimerRef.current = null;
+    }
+    analysisVisualRevealStartedAtRef.current = null;
+  }, []);
+
+  const setAnalysisVisualStep = useCallback((nextIndex: number) => {
+    const clamped = Math.max(0, Math.min(nextIndex, ANALYSIS_VISUAL_FINAL_INDEX));
+    analysisVisualStepIndexRef.current = clamped;
+    analysisVisualStepStartedAtRef.current = Date.now();
+    setAnalysisVisualStepIndex(clamped);
+  }, []);
+
+  const scheduleAnalysisVisualProgress = useCallback(() => {
+    if (analysisVisualProgressTimerRef.current) {
+      clearTimeout(analysisVisualProgressTimerRef.current);
+      analysisVisualProgressTimerRef.current = null;
+    }
+    if (!scanPipelineLoadingRef.current) {
+      return;
+    }
+
+    const current = analysisVisualStepIndexRef.current;
+    const target = analysisVisualTargetIndexRef.current;
+    if (current >= target || current >= ANALYSIS_VISUAL_FINAL_INDEX) {
+      return;
+    }
+
+    const elapsedOnStep = Date.now() - analysisVisualStepStartedAtRef.current;
+    const delayMs = Math.max(0, ANALYSIS_VISUAL_STEP_MIN_MS - elapsedOnStep);
+    analysisVisualProgressTimerRef.current = setTimeout(() => {
+      analysisVisualProgressTimerRef.current = null;
+      setAnalysisVisualStep(analysisVisualStepIndexRef.current + 1);
+      scheduleAnalysisVisualProgressRef.current?.();
+    }, delayMs);
+  }, [setAnalysisVisualStep]);
+  scheduleAnalysisVisualProgressRef.current = scheduleAnalysisVisualProgress;
+
+  const isAnalysisVisualReadyForReveal = useCallback(() => {
+    return (
+      analysisVisualStepIndexRef.current >= ANALYSIS_VISUAL_FINAL_INDEX &&
+      Date.now() - analysisVisualStepStartedAtRef.current >= ANALYSIS_VISUAL_FINAL_MIN_MS
+    );
+  }, []);
+
   const clearPostScanHandoff = useCallback(() => {
+    clearAnalysisVisualTimers();
     pendingPostScanOutcomeRef.current = null;
     expectingScannerDismissHandoffRef.current = false;
     scannerDismissedForHandoffRef.current = false;
-  }, []);
+  }, [clearAnalysisVisualTimers]);
 
   const commitPendingPostScanOutcome = useCallback(() => {
     const p = pendingPostScanOutcomeRef.current;
     if (p) {
+      if (p.kind === 'known' && scanPipelineLoadingRef.current && !isAnalysisVisualReadyForReveal()) {
+        if (analysisVisualRevealStartedAtRef.current == null) {
+          analysisVisualRevealStartedAtRef.current = Date.now();
+        }
+        analysisVisualTargetIndexRef.current = ANALYSIS_VISUAL_FINAL_INDEX;
+        scheduleAnalysisVisualProgress();
+
+        const revealWaitElapsed = Date.now() - analysisVisualRevealStartedAtRef.current;
+        if (revealWaitElapsed < ANALYSIS_VISUAL_REVEAL_MAX_MS) {
+          if (analysisVisualRevealTimerRef.current) {
+            clearTimeout(analysisVisualRevealTimerRef.current);
+          }
+          const stepElapsed = Date.now() - analysisVisualStepStartedAtRef.current;
+          const nextCheckDelay =
+            analysisVisualStepIndexRef.current >= ANALYSIS_VISUAL_FINAL_INDEX
+              ? Math.max(0, ANALYSIS_VISUAL_FINAL_MIN_MS - stepElapsed)
+              : Math.max(0, ANALYSIS_VISUAL_STEP_MIN_MS - stepElapsed);
+          analysisVisualRevealTimerRef.current = setTimeout(() => {
+            analysisVisualRevealTimerRef.current = null;
+            commitPendingPostScanOutcomeFnRef.current?.();
+          }, Math.max(50, Math.min(250, nextCheckDelay)));
+          return;
+        }
+      }
+
+      analysisVisualRevealStartedAtRef.current = null;
       const snapshot = p;
       pendingPostScanOutcomeRef.current = null;
       expectingScannerDismissHandoffRef.current = false;
@@ -547,7 +639,41 @@ export default function HomeScreen() {
         revealFallback();
       }
     }
-  }, []);
+  }, [isAnalysisVisualReadyForReveal, scheduleAnalysisVisualProgress]);
+  commitPendingPostScanOutcomeFnRef.current = commitPendingPostScanOutcome;
+
+  useEffect(() => {
+    if (!scanPipelineLoading) {
+      clearAnalysisVisualTimers();
+      analysisVisualTargetIndexRef.current = 0;
+      analysisVisualStepIndexRef.current = 0;
+      analysisVisualStepStartedAtRef.current = Date.now();
+      setAnalysisVisualStepIndex(0);
+      return;
+    }
+
+    analysisVisualTargetIndexRef.current = 0;
+    setAnalysisVisualStep(0);
+    scheduleAnalysisVisualProgress();
+  }, [clearAnalysisVisualTimers, scanPipelineLoading, scheduleAnalysisVisualProgress, setAnalysisVisualStep]);
+
+  useEffect(() => {
+    if (!scanPipelineLoading) {
+      return;
+    }
+    const progressText = scanProgressTextOverride ?? (scanProgressKey ? t(scanProgressKey, lang) : t('loading.checking', lang));
+    const targetIndex = deriveAnalysisVisualTargetIndex(scanProgressKey, progressText);
+    if (targetIndex > analysisVisualTargetIndexRef.current) {
+      analysisVisualTargetIndexRef.current = targetIndex;
+      scheduleAnalysisVisualProgress();
+    }
+  }, [lang, scanPipelineLoading, scanProgressKey, scanProgressTextOverride, scheduleAnalysisVisualProgress]);
+
+  useEffect(() => {
+    return () => {
+      clearAnalysisVisualTimers();
+    };
+  }, [clearAnalysisVisualTimers]);
 
   const refreshFavoritesList = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -1306,7 +1432,7 @@ export default function HomeScreen() {
   const scanBadge = freeScanBadge(dailyScanState.count);
   const scanProgressText = scanProgressTextOverride ?? (scanProgressKey ? t(scanProgressKey, lang) : t('loading.checking', lang));
   const scanAnalysisTitle = analysisOverlayTitle(scanProgressTextOverride);
-  const activeAnalysisStep = deriveAnalysisVisualStep(scanProgressKey, scanProgressText);
+  const scanAnalysisSubtitle = ANALYSIS_VISUAL_STEPS[analysisVisualStepIndex]?.label ?? scanProgressText;
 
   return (
     <SafeAreaView
@@ -2075,7 +2201,7 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <ScanAnalysisOverlay title={scanAnalysisTitle} subtitle={scanProgressText} activeStep={activeAnalysisStep} />
+          <ScanAnalysisOverlay title={scanAnalysisTitle} subtitle={scanAnalysisSubtitle} visualStepIndex={analysisVisualStepIndex} />
         </View>
       ) : null}
       {resultModalVisible && scanForResultModal ? (
