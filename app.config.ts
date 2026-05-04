@@ -40,7 +40,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.mikhail.kidlensai',
-    buildNumber: '1',
+    buildNumber: '4',
+    icon: './assets/images/icon.png',
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
@@ -48,12 +49,10 @@ const config: ExpoConfig = {
 
   android: {
     package: 'com.mikhail.kidlensai',
-    versionCode: 2,
+    versionCode: 4,
     adaptiveIcon: {
       backgroundColor: '#E6F4FE',
-      foregroundImage: './assets/images/android-icon-foreground.png',
-      backgroundImage: './assets/images/android-icon-background.png',
-      monochromeImage: './assets/images/android-icon-monochrome.png',
+      foregroundImage: './assets/images/icon.png',
     },
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
@@ -80,6 +79,7 @@ const config: ExpoConfig = {
     ],
     'expo-secure-store',
     'expo-video',
+    'expo-web-browser',
     '@react-native-community/datetimepicker',
   ],
 
