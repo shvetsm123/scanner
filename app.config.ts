@@ -40,7 +40,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.mikhail.kidlensai',
-    buildNumber: '4',
+    buildNumber: '6',
     icon: './assets/images/icon.png',
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -49,7 +49,7 @@ const config: ExpoConfig = {
 
   android: {
     package: 'com.mikhail.kidlensai',
-    versionCode: 4,
+    versionCode: 6,
     adaptiveIcon: {
       backgroundColor: '#E6F4FE',
       foregroundImage: './assets/images/icon.png',
