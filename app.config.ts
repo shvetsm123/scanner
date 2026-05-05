@@ -38,9 +38,9 @@ const config: ExpoConfig = {
   newArchEnabled: true,
 
   ios: {
-    supportsTablet: true,
+    supportsTablet: false,
     bundleIdentifier: 'com.mikhail.kidlensai',
-    buildNumber: '6',
+    buildNumber: '9',
     icon: './assets/images/icon.png',
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -49,7 +49,7 @@ const config: ExpoConfig = {
 
   android: {
     package: 'com.mikhail.kidlensai',
-    versionCode: 6,
+    versionCode: 9,
     adaptiveIcon: {
       backgroundColor: '#E6F4FE',
       foregroundImage: './assets/images/icon.png',
